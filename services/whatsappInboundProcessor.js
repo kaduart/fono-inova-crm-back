@@ -126,6 +126,15 @@ export async function processPollVote(ev) {
 /** Despacha um evento do conector pelo tipo. Tipo desconhecido é ignorado (versões diferentes convivem). */
 export async function processConnectorEvent(evt) {
   const data = evt?.data || {};
+  // Modo externo: o log 📣 do anúncio (antes no whatsappWebJsService) sai daqui, com o mesmo formato.
+  if (evt?.connectorId && evt.type === 'message.inbound' && data.ctwa && data.source !== 'catchup') {
+    try {
+      const { extractCtwa, clidLogInfo } = await import('../utils/ctwaContext.js');
+      const ctwa = extractCtwa(data.ctwa, data.externalAdReply ? { externalAdReply: data.externalAdReply } : null);
+      console.log('[WhatsAppInbound] 📣 ctwaContext recebido (conector) — chaves:', Object.keys(data.ctwa).join(','),
+        `| anúncio=${ctwa?.sourceId ? 'sim' : 'não'} clid=${ctwa?.ctwaClid ? `sim (${ctwa.clidFrom}; ${clidLogInfo(ctwa.ctwaClid)})` : 'não'}`);
+    } catch { /* log é diagnóstico */ }
+  }
   switch (evt?.type) {
     case 'message.inbound': return processInboundMessage(data);
     case 'message.outbound': return processOutboundClinicMessage(data);

@@ -20,6 +20,10 @@ import { CONNECTOR_EVENTS_QUEUE } from '../services/whatsappConnector/eventsRece
 import { processConnectorEvent, processPollVote } from '../services/whatsappInboundProcessor.js';
 import { processWhatsappSendJob, onWhatsappSendJobFailed } from './whatsappSendJob.js';
 import { ATTENDANCE_POLL } from '../constants/attendancePoll.js';
+import { WAITLIST_WHATSAPP_KEYWORDS, CONVENIOS_WAITLIST } from '../constants/convenioWaitlist.js';
+
+/** [[convênio, regexSource]] para a varredura profunda no conector. */
+export const deepScanPatterns = () => CONVENIOS_WAITLIST.map((c) => [c, WAITLIST_WHATSAPP_KEYWORDS[c].regex.source]);
 
 const TAG = 'WA-BRIDGE';
 const STATUS_INTERVAL_MS = 5_000;
@@ -74,6 +78,40 @@ export function stateFromConnector(st) {
   };
 }
 
+/**
+ * Leitura do estado do conector (a cada 5 s). Com o conector fora, depois de 3 falhas seguidas grava
+ * status 'connector_unreachable' com o motivo (o ERP mostra "Última desconexão: ..."). Não existe fallback
+ * para Chrome local: este módulo nem importa o motor.
+ */
+export function makeStatusPoller({ client, writeState, onState = () => {}, onConnected = async () => {}, unreachableAfter = UNREACHABLE_AFTER, logger = console }) {
+  let misses = 0;
+  let wasReady = false;
+  return async function pollStatus() {
+    try {
+      const st = await client.getStatus();
+      misses = 0;
+      const doc = stateFromConnector(st);
+      await writeState(doc);
+      onState(doc);
+      if (doc.ready && !wasReady) { logger.log?.(`[${TAG}] ✅ conector conectado ao WhatsApp`); await onConnected(); }
+      if (!doc.ready && wasReady) logger.warn?.(`[${TAG}] 🔴 conector desconectado do WhatsApp (${doc.status})`);
+      wasReady = doc.ready;
+      return doc;
+    } catch (err) {
+      misses++;
+      if (misses >= unreachableAfter) {
+        const doc = { status: 'connector_unreachable', ready: false, authenticated: false, qrCode: null, lastDisconnectReason: `conector sem resposta: ${err.message}`, updatedAt: new Date() };
+        if (misses === unreachableAfter) logger.error?.(`[${TAG}] 🚫 conector sem resposta (${err.message}) — ERP mostra o motivo; sem Chrome local`);
+        await Promise.resolve(writeState(doc)).catch(() => {});
+        onState(doc);
+        wasReady = false;
+        return doc;
+      }
+      return null;
+    }
+  };
+}
+
 export async function startConnectorBridge({ client = getConnectorClient(), onState = () => {} } = {}) {
   const { default: WhatsAppWebState } = await import('../models/WhatsAppWebState.js');
   const { guardedSend, DeliveryOutcome, ensureDeliveryIndexes } = await import('../infrastructure/delivery/deliveryGuard.js');
@@ -117,7 +155,8 @@ export async function startConnectorBridge({ client = getConnectorClient(), onSt
         const { runDeepConvenioScan } = await import('../services/whatsappDeepScan.js');
         const run = await WhatsAppScanRun.findById(runId).select('progress').lean();
         stats = await runDeepConvenioScan({
-          readBatch: (p) => client.readDeepScanBatch(p),
+          // Quais convênios procurar é regra do CRM: os padrões vão junto em cada lote.
+          readBatch: (p) => client.readDeepScanBatch({ ...p, patterns: deepScanPatterns() }),
           startIndex: run?.progress?.nextIndex || 0,
           ...(job.data.since ? { since: new Date(job.data.since) } : {}),
           onBatch: (p) => WhatsAppScanRun.updateOne({ _id: runId }, { $set: { progress: { nextIndex: p.nextIndex }, stats: p.stats } }),
@@ -145,38 +184,19 @@ export async function startConnectorBridge({ client = getConnectorClient(), onSt
   workers.push(eventsWorker);
 
   // ── Estado da conexão ─────────────────────────────────────────────────────
-  let misses = 0;
   let wasReady = false;
   let lidRepairDone = false;
-  const pollStatus = async () => {
-    try {
-      const st = await client.getStatus();
-      misses = 0;
-      const doc = stateFromConnector(st);
-      await WhatsAppWebState.findOneAndUpdate({ instanceId: 'main' }, { $set: doc }, { upsert: true });
-      onState(doc);
-      if (doc.ready && !wasReady) {
-        console.log(`[${TAG}] ✅ conector conectado ao WhatsApp`);
-        if (!lidRepairDone) {
-          lidRepairDone = true;
-          const { repairLidAttributions } = await import('../services/whatsappLidRepair.js');
-          repairLidAttributions({ resolveLids: (lids) => client.resolveLids(lids) }).catch((e) => console.warn(`[${TAG}] reparo @lid falhou:`, e.message));
-        }
-      }
-      if (!doc.ready && wasReady) console.warn(`[${TAG}] 🔴 conector desconectado do WhatsApp (${doc.status})`);
-      wasReady = doc.ready;
-    } catch (err) {
-      misses++;
-      if (misses === UNREACHABLE_AFTER) {
-        console.error(`[${TAG}] 🚫 conector sem resposta (${err.message}) — ERP mostra desconectado`);
-        await WhatsAppWebState.findOneAndUpdate({ instanceId: 'main' }, {
-          $set: { status: 'connector_unreachable', ready: false, qrCode: null, lastDisconnectReason: `conector sem resposta: ${err.message}`, updatedAt: new Date() },
-        }, { upsert: true }).catch(() => {});
-        onState({ status: 'connector_unreachable', ready: false });
-        wasReady = false;
-      }
-    }
-  };
+  const pollStatus = makeStatusPoller({
+    client,
+    writeState: (doc) => WhatsAppWebState.findOneAndUpdate({ instanceId: 'main' }, { $set: doc }, { upsert: true }),
+    onState: (doc) => { wasReady = Boolean(doc.ready); onState(doc); },
+    onConnected: async () => {
+      if (lidRepairDone) return;
+      lidRepairDone = true;
+      const { repairLidAttributions } = await import('../services/whatsappLidRepair.js');
+      repairLidAttributions({ resolveLids: (lids) => client.resolveLids(lids) }).catch((e) => console.warn(`[${TAG}] reparo @lid falhou:`, e.message));
+    },
+  });
   timers.push(setInterval(pollStatus, STATUS_INTERVAL_MS));
   pollStatus();
 

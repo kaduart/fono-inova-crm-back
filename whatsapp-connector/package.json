@@ -1,0 +1,19 @@
+{
+  "name": "fono-inova-whatsapp-connector",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Conector WhatsApp (whatsapp-web.js + Chrome) separado do CRM: sessão e navegador; regras de negócio ficam no CRM.",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "simulator": "WA_CONNECTOR_ENGINE=simulator node src/index.js",
+    "test": "node --test --test-force-exit test/*.test.js",
+    "import-session": "node scripts/import-session.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "whatsapp-web.js": "https://github.com/wwebjs/whatsapp-web.js/archive/58ddf1561cd783d6a548fa812eb70a05944604b4.tar.gz"
+  }
+}

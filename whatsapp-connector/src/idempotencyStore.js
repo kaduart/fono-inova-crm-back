@@ -9,7 +9,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { SendState, sha256hex } from '../services/whatsappConnector/contract.js';
+import { SendState, sha256hex } from './contract.js';
 
 export function payloadFingerprint(payload) {
   return sha256hex(JSON.stringify(payload ?? null));

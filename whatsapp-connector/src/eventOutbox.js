@@ -9,7 +9,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { signRequest, SIGNATURE_HEADER } from '../services/whatsappConnector/contract.js';
+import { signRequest, SIGNATURE_HEADER } from './contract.js';
 
 export class EventOutbox {
   constructor({

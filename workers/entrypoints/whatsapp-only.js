@@ -17,6 +17,7 @@ import { startCron } from '../../config/cronManager.js';
 import { scheduleGmbCron } from '../../jobs/gmbScheduledTasks.js';
 import { scheduleGmbAutoRepublish } from '../../crons/gmbAutoRepublish.js';
 import { startPostGenerationWorker } from '../postGenerationWorker.js';
+import { isExternalMode, shouldSpawnChromeChild } from './whatsappMode.js';
 
 dotenv.config();
 
@@ -27,7 +28,7 @@ const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
 // 18/11/2026: WHATSAPP_CONNECTOR_MODE=external → o Chrome/sessão ficam no conector (outro host) e este
 // processo NÃO sobe o child com Chrome; a ponte (workers/whatsappConnectorBridge.js) consome as filas do
 // WhatsApp e fala com o conector por HTTP. Sem a variável (ou =local) nada muda.
-const EXTERNAL_MODE = process.env.WHATSAPP_CONNECTOR_MODE === 'external';
+const EXTERNAL_MODE = isExternalMode();
 let connectorBridge = null;
 
 console.log('🆘 WhatsApp ONLY + Workers Core — Processo principal\n');
@@ -144,6 +145,13 @@ server.listen(PORT, '0.0.0.0', async () => {
     }
 
     if (EXTERNAL_MODE) {
+        await startBridgeWithRetry();
+    }
+});
+
+// Modo externo: a ponte é o único caminho do WhatsApp. Se não subir, NÃO cai para Chrome local: fica
+// visível no ERP (status connector_bridge_failed) e tenta de novo com espera crescente.
+async function startBridgeWithRetry(attempt = 1) {
         try {
             const { startConnectorBridge } = await import('../whatsappConnectorBridge.js');
             connectorBridge = await startConnectorBridge({
@@ -158,10 +166,17 @@ server.listen(PORT, '0.0.0.0', async () => {
                 },
             });
         } catch (err) {
-            console.error('❌ Ponte do conector WhatsApp não subiu:', err.message);
+            const waitS = Math.min(300, 15 * attempt);
+            console.error(`❌ Ponte do conector WhatsApp não subiu (tentativa ${attempt}): ${err.message} — nova tentativa em ${waitS}s, sem Chrome local`);
+            childStatus = 'connector_bridge_failed';
+            Object.assign(stateSnapshot, { status: 'connector_bridge_failed', ready: false, lastDisconnectReason: `ponte do conector não subiu: ${err.message}`, updatedAt: new Date().toISOString() });
+            try {
+                const { default: WhatsAppWebState } = await import('../../models/WhatsAppWebState.js');
+                await WhatsAppWebState.findOneAndUpdate({ instanceId: 'main' }, { $set: { status: 'connector_bridge_failed', ready: false, qrCode: null, lastDisconnectReason: stateSnapshot.lastDisconnectReason, updatedAt: new Date() } }, { upsert: true });
+            } catch { /* sem banco: o log acima é o sinal */ }
+            setTimeout(() => startBridgeWithRetry(attempt + 1), waitS * 1000);
         }
-    }
-});
+}
 
 // ─── Workers core (tudo exceto whatsapp, que fica no child) ──────────────────
 const activeWorkers = [];
@@ -208,6 +223,11 @@ async function startCoreWorkers() {
 
 // ─── Gerenciador do child process ──────────────────────────────────────────
 function spawnWhatsAppChild() {
+    // Defesa em profundidade: no modo externo nenhum caminho (boot, respawn, retry) cria o child com Chrome.
+    if (!shouldSpawnChromeChild()) {
+        console.error('[PARENT] 🚫 spawnWhatsAppChild chamado em modo externo — ignorado (o Chrome fica no conector).');
+        return;
+    }
     if (childRestartCount >= MAX_RESTARTS) {
         console.log('[PARENT] 🚫 Limite de reinicializações do child atingido.');
         childStatus = 'max_restarts';

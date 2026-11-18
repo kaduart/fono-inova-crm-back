@@ -28,16 +28,13 @@ import { PINNED_CHROME_VERSION, chromeBinarySubpath } from '../config/chromeVers
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 import { ATTENDANCE_POLL } from '../constants/attendancePoll.js';
 
-// ─── Papel do processo (18/11/2026, separação do conector — docs/WHATSAPP_CONECTOR_EXTERNO.md) ───
-// WA_ENGINE_ROLE=connector → este processo É o conector (Chrome + sessão), sem MongoDB: o que chega do
-//   WhatsApp sai como evento pelo sink (setEventSink) e as regras de negócio rodam no CRM.
-// WHATSAPP_CONNECTOR_MODE=external num processo do CRM → o Chrome NUNCA sobe aqui (nem em falha/reconexão).
-export const ENGINE_ROLE = process.env.WA_ENGINE_ROLE === 'connector' ? 'connector' : 'local';
-const IS_CONNECTOR = ENGINE_ROLE === 'connector';
-
-/** true quando este processo não pode abrir Chrome (CRM em modo externo). Lido a cada chamada. */
+// ─── Modo externo (18/11/2026, docs/WHATSAPP_CONECTOR_EXTERNO.md) ───
+// WHATSAPP_CONNECTOR_MODE=external → o Chrome vive no conector (projeto whatsapp-connector/) e NUNCA sobe
+// neste processo: nem no boot, nem em retry, reconexão ou recuperação (todos passam por initWhatsAppClient
+// e createClient). Não há fallback para Chrome local: com o conector fora, a falha aparece no ERP.
+/** true quando este processo não pode abrir Chrome. Lido a cada chamada. */
 export function localChromeForbidden(env = process.env) {
-  return env.WHATSAPP_CONNECTOR_MODE === 'external' && env.WA_ENGINE_ROLE !== 'connector';
+  return env.WHATSAPP_CONNECTOR_MODE === 'external';
 }
 let chromeForbiddenLogged = false;
 function refuseLocalChrome(where) {
@@ -47,12 +44,18 @@ function refuseLocalChrome(where) {
   }
 }
 
-let eventSink = null;
-/** Conector: recebe (type, data) de cada evento normalizado. null volta ao processamento local. */
-export function setEventSink(fn) { eventSink = typeof fn === 'function' ? fn : null; }
+// Sessão transferida para o conector (scripts/whatsapp-session-handoff.js release): mesmo em modo local, o
+// Chrome NÃO abre nesta pasta — a mesma sessão não pode rodar em dois lugares. Volta só com `reclaim`.
+export const SESSION_TRANSFERRED_MARKER = '.session-transferred.json';
+export function sessionTransferredInfo(dir = authPathFromEnv()) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, SESSION_TRANSFERRED_MARKER), 'utf8')); } catch (e) {
+    return e?.code === 'ENOENT' ? null : { unreadable: true };
+  }
+}
+function authPathFromEnv() { return process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth'; }
 
 // ─── Caminho de persistência da sessão (module-level para uso em clearSession/reconnect) ─
-const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
+const authPath = authPathFromEnv();
 
 // ─── Estado singleton em memória (fonte de verdade para rotas, parent, frontend) ─
 export const whatsappState = {
@@ -128,7 +131,6 @@ async function saveState() {
     uptime: process.uptime(),
     initAttempts,
   });
-  if (IS_CONNECTOR) return; // conector não tem MongoDB: o CRM lê o estado em GET /v1/status
   try {
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
@@ -160,8 +162,6 @@ function scheduleAttributionJobs(client) {
   attributionJobsScheduled.add(client);
   // Worker fica desligado à noite/fim de semana: recupera a origem das mensagens recebidas nesse período
   setTimeout(() => catchUpAttribution(client), 60_000);
-  // Conector: o reparo @lid lê o banco — quem roda é o CRM, pedindo a resolução em POST /v1/contacts/resolve-lids.
-  if (IS_CONNECTOR) return;
   setTimeout(() => repairLidAttributions(client).catch((e) => console.warn('[WhatsAppWeb] reparo @lid falhou:', e.message)), 90_000);
 }
 
@@ -202,8 +202,6 @@ async function syncPendingAttendancePollVotes(activeClient) {
 }
 
 function startAttendancePollSync(activeClient) {
-  // Conector: a lista de lembretes pendentes está no banco — o CRM pergunta os votos em POST /v1/polls/votes.
-  if (IS_CONNECTOR) return;
   if (attendancePollSyncInterval) clearInterval(attendancePollSyncInterval);
   attendancePollSyncInterval = setInterval(
     () => syncPendingAttendancePollVotes(activeClient),
@@ -611,6 +609,7 @@ function cleanupChromeCacheIfNeeded() {
 
 function createClient() {
   if (localChromeForbidden()) { refuseLocalChrome('createClient'); throw new Error('Chrome local proibido (WHATSAPP_CONNECTOR_MODE=external)'); }
+  if (sessionTransferredInfo(authPath)) throw new Error('Chrome local proibido: sessão transferida para o conector');
   installChromeStderrFilter();
   // Garante pasta de persistência
   try {
@@ -1117,13 +1116,9 @@ export async function normalizeInboundMessage(msg, source = 'live') {
   };
 }
 
-// Conector: o evento sai pelo sink (HTTP para o CRM). Local: as regras rodam aqui mesmo.
+// Modo local: as regras de negócio (as mesmas do modo externo) rodam aqui mesmo.
 async function deliverEvent(type, data) {
   if (!data) return null;
-  if (IS_CONNECTOR) {
-    if (eventSink) await eventSink(type, data);
-    return null;
-  }
   const { processConnectorEvent } = await import('./whatsappInboundProcessor.js');
   return processConnectorEvent({ type, data });
 }
@@ -1502,6 +1497,16 @@ export async function initWhatsAppClient() {
   // Modo externo: o Chrome vive no conector. Vale para o boot, o retry, o reconnect e a recuperação,
   // que todos passam por aqui (e por createClient, que também recusa).
   if (localChromeForbidden()) { refuseLocalChrome('initWhatsAppClient'); return; }
+  const transferred = sessionTransferredInfo(authPath);
+  if (transferred) {
+    // Visível no ERP (WhatsAppWebState), sem Chrome e sem retry: a decisão de voltar é humana (reclaim).
+    console.error(`[WhatsAppWeb] 🚫 sessão transferida para o conector (${transferred.to || '?'} em ${transferred.at || '?'}) — Chrome local não sobe.`);
+    connectionStatus = 'session_transferred';
+    isReady = false;
+    whatsappState.lastDisconnectReason = `sessão transferida para o conector ${transferred.to || ''}; para voltar: scripts/whatsapp-session-handoff.js reclaim`;
+    await saveState();
+    return;
+  }
   console.log(`[WhatsAppWeb] 📂 Auth path: ${authPath}`);
 
   // 🧨 LIMPEZA DE SESSÃO: definir WHATSAPP_FORCE_CLEAN_SESSION='true' no dashboard.
@@ -1688,8 +1693,6 @@ async function safeDestroyClient() {
 
 // ─── Status ──────────────────────────────────────────────────────────────────
 export async function getStatus() {
-  // Conector: o estado em memória é a fonte (não há MongoDB neste processo).
-  if (IS_CONNECTOR) return { ...whatsappState, error: null };
   // Se o singleton tem dados recentes (< 30s), usa ele (worker ativo)
   if (whatsappState.updatedAt) {
     const age = Date.now() - new Date(whatsappState.updatedAt).getTime();
@@ -1828,7 +1831,7 @@ export async function clearSession() {
   whatsappState.qrCount = 0;
   updateState({});
 
-  if (!IS_CONNECTOR) try {
+  try {
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
       { status: 'disconnected', ready: false, qrCode: null, pid: null, uptime: null, reconnectSignal: new Date(), updatedAt: new Date() },
@@ -1876,7 +1879,7 @@ let _lastReconnectSignal = null;
 
 export async function checkExternalReconnectSignal() {
   // Não bloqueia em isInitializing: é justamente quando o init trava que o botão precisa agir.
-  if (isReady || IS_CONNECTOR) return;
+  if (isReady) return;
   try {
     const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).select('reconnectSignal').lean();
     if (!state?.reconnectSignal) return;

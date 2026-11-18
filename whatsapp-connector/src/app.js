@@ -1,19 +1,34 @@
-// whatsapp-connector/app.js
+// whatsapp-connector/src/app.js
 //
 // API HTTP do conector WhatsApp (18/11/2026). Só mantém a sessão e o navegador; nenhuma regra de negócio.
-// `engine` é injetado: em produção, as funções do whatsappWebJsService (com WA_ENGINE_ROLE=connector);
-// nos testes, um simulador. Contrato: docs/WHATSAPP_CONECTOR_EXTERNO.md e services/whatsappConnector/contract.js.
+// `engine` é injetado: em produção, o motor whatsapp-web.js deste projeto (src/engine.js); nos testes, o
+// simulador (src/simulator.js). Contrato: src/contract.js e, no CRM, docs/WHATSAPP_CONECTOR_EXTERNO.md.
 
 import http from 'http';
 import {
   SIGNATURE_HEADER, SendState, FailCode, verifySignature,
-} from '../services/whatsappConnector/contract.js';
+} from './contract.js';
 import { payloadFingerprint } from './idempotencyStore.js';
 
 const MAX_BODY = 1024 * 1024;
 
+/** Padrões da varredura vêm do CRM (quais convênios procurar é regra de negócio): [[nome, regexSource]]. */
+function validPatterns(patterns) {
+  if (!Array.isArray(patterns) || !patterns.length || patterns.length > 20) {
+    throw Object.assign(new Error('patterns obrigatório: [[nome, regex]] (1 a 20)'), { status: 400 });
+  }
+  for (const p of patterns) {
+    if (!Array.isArray(p) || p.length !== 2 || typeof p[0] !== 'string' || typeof p[1] !== 'string' || p[1].length > 500) {
+      throw Object.assign(new Error('pattern inválido'), { status: 400 });
+    }
+    try { new RegExp(p[1], 'i'); } catch { throw Object.assign(new Error(`regex inválida: ${p[0]}`), { status: 400 }); }
+  }
+  return patterns;
+}
+
 /** Classifica o erro do envio: só devolve FailCode quando o erro PROVA que nada saiu. */
 export function classifySendError(err) {
+  if (err?.code && [FailCode.NOT_CONNECTED, FailCode.INVALID_NUMBER, FailCode.NO_WHATSAPP].includes(err.code)) return err.code;
   const msg = String(err?.message || err || '');
   if (/não está conectado/i.test(msg)) return FailCode.NOT_CONNECTED;
   if (/Número inválido|invalid (phone|number)/i.test(msg)) return FailCode.INVALID_NUMBER;
@@ -74,11 +89,16 @@ export function createConnectorApp({
   };
 
   async function doSend(body) {
-    const { requestId, phone, text, kind = 'text', appointmentId = null } = body || {};
+    const { requestId, phone, text, kind = 'text', appointmentId = null, poll = null } = body || {};
     if (!requestId || typeof requestId !== 'string' || requestId.length > 200 || !phone || typeof text !== 'string' || !text.trim()) {
       return [400, { status: SendState.FAILED, code: FailCode.BAD_REQUEST, error: 'requestId, phone e text são obrigatórios' }];
     }
-    const fingerprint = payloadFingerprint({ phone: String(phone), text, kind, appointmentId });
+    // Enquete: o texto vem do CRM (regra de negócio); aqui só a forma é conferida.
+    if (poll !== null && (typeof poll !== 'object' || typeof poll.question !== 'string' || !Array.isArray(poll.options)
+      || poll.options.length < 2 || poll.options.length > 12 || poll.options.some((o) => typeof o !== 'string' || !o.trim()))) {
+      return [400, { status: SendState.FAILED, code: FailCode.BAD_REQUEST, error: 'poll inválida: { question, options[2..12], fallbackText? }' }];
+    }
+    const fingerprint = payloadFingerprint({ phone: String(phone), text, kind, appointmentId, poll });
     const r = store.begin(requestId, fingerprint);
     if (r.conflict) return [409, { status: SendState.FAILED, code: FailCode.REQUEST_ID_REUSED, error: 'requestId já usado com outro conteúdo' }];
     if (!r.reserved) {
@@ -86,7 +106,7 @@ export function createConnectorApp({
       return [rec.state === SendState.IN_PROGRESS ? 409 : 200, { status: rec.state, messageId: rec.messageId || null, code: rec.code || null, duplicate: true }];
     }
 
-    const opts = { attendanceConfirmation: kind === 'attendance_confirmation', appointmentId };
+    const opts = { kind, appointmentId, poll };
     const attempt = serialize(() => engine.sendMessage(String(phone), text, opts));
     try {
       const result = await withTimeout(attempt, sendTimeoutMs, 'envio');
@@ -131,6 +151,7 @@ export function createConnectorApp({
       batchSize: Math.min(Number(b.batchSize) || 20, 50),
       since: b.since ? new Date(b.since) : undefined,
       maxLoadsPerChat: Math.min(Number(b.maxLoadsPerChat) || 80, 200),
+      patterns: validPatterns(b.patterns),
     }), readTimeoutMs * 3, 'varredura')],
     'POST /v1/contacts/resolve-lids': async (b) => [200, { results: await withTimeout(engine.resolveLidsToPhones(Array.isArray(b.lids) ? b.lids : []), readTimeoutMs, 'lids') }],
     'POST /v1/polls/votes': async (b) => [200, { results: await withTimeout(engine.readPollVotes(Array.isArray(b.messageIds) ? b.messageIds : []), readTimeoutMs, 'votos') }],

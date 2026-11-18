@@ -10,6 +10,7 @@
 //                                          lança erro com err.uncertain = true e SEM deliveryNotSent
 //                                          (o deliveryGuard grava "unknown" e nada reenvia sozinho).
 
+import { normalizeE164BR } from '../../utils/phone.js';
 import {
   SIGNATURE_HEADER, SendState, FailCode, signRequest, secretsFromEnv,
 } from './contract.js';
@@ -120,11 +121,14 @@ export function createConnectorClient({
    * Envia texto (kind 'text') ou o lembrete de presença com enquete (kind 'attendance_confirmation').
    * O MESMO requestId nunca gera duas mensagens: use um id estável por envio lógico (ex.: id do job).
    */
-  async function sendMessage({ requestId, phone, text, kind = 'text', appointmentId = null }) {
+  async function sendMessage({ requestId, phone, text, kind = 'text', appointmentId = null, poll = null }) {
     if (!requestId) throw new ConnectorError('requestId obrigatório', { code: FailCode.BAD_REQUEST, deliveryNotSent: true });
+    // Normalização do telefone é regra do CRM (mesma do modo local); o conector só aceita dígitos.
+    const clean = normalizeE164BR(phone);
+    if (!clean) throw new ConnectorError(`Número inválido: ${phone}`, { code: FailCode.INVALID_NUMBER, deliveryNotSent: true });
     let res;
     try {
-      res = await request('POST', '/v1/messages', { requestId, phone, text, kind, appointmentId }, { timeout: sendTimeoutMs });
+      res = await request('POST', '/v1/messages', { requestId, phone: clean, text, kind, appointmentId, poll }, { timeout: sendTimeoutMs });
     } catch (err) {
       if (err?.deliveryNotSent) throw err; // nem chegou ao conector
       return resolveSend(requestId, err);
@@ -146,7 +150,9 @@ export function createConnectorClient({
     sendMessage,
     getStatus: () => call('GET', '/v1/status'),
     getChatActivity: async (phone) => {
-      const r = await call('POST', '/v1/chats/activity', { phone }, { timeout: 60_000 });
+      const clean = normalizeE164BR(phone);
+      if (!clean) throw new ConnectorError(`Número inválido: ${phone}`, { code: FailCode.INVALID_NUMBER, deliveryNotSent: true });
+      const r = await call('POST', '/v1/chats/activity', { phone: clean }, { timeout: 60_000 });
       return { ...r, clinicAt: r?.clinicAt ? new Date(r.clinicAt) : null, contactAt: r?.contactAt ? new Date(r.contactAt) : null };
     },
     readChatActivity: async ({ onlyTails = null } = {}) => {

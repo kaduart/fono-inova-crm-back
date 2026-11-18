@@ -9,10 +9,10 @@ import path from 'path';
 import {
   signRequest, verifySignature, buildEvent, eventIdFor, jobIdForEvent, SendState, FailCode, SIGNATURE_HEADER,
 } from '../../services/whatsappConnector/contract.js';
-import { IdempotencyStore } from '../../whatsapp-connector/idempotencyStore.js';
-import { EventOutbox } from '../../whatsapp-connector/eventOutbox.js';
-import { createConnectorApp, listen, classifySendError } from '../../whatsapp-connector/app.js';
-import { createFakeEngine } from '../../whatsapp-connector/simulator.js';
+import { IdempotencyStore } from '../../whatsapp-connector/src/idempotencyStore.js';
+import { EventOutbox } from '../../whatsapp-connector/src/eventOutbox.js';
+import { createConnectorApp, listen, classifySendError } from '../../whatsapp-connector/src/app.js';
+import { createFakeEngine } from '../../whatsapp-connector/src/simulator.js';
 import { createConnectorClient } from '../../services/whatsappConnector/client.js';
 import { receiveConnectorEvents } from '../../services/whatsappConnector/eventsReceiver.js';
 
@@ -245,7 +245,7 @@ describe('cenários com o simulador (HTTP real)', () => {
   it('leituras repassadas: atividade, varredura em lote, reconectar', async () => {
     const act = await client.getChatActivity('5562999990000');
     expect(act.contactAt).toBeInstanceOf(Date);
-    const b = await client.readDeepScanBatch({ startIndex: 0, batchSize: 2, since: new Date(0) });
+    const b = await client.readDeepScanBatch({ startIndex: 0, batchSize: 2, since: new Date(0), patterns: [['geap', 'geap']] });
     expect(b).toMatchObject({ total: 3, nextIndex: 2 });
     await client.reconnect();
     expect(engine.state.reconnects).toBe(1);
@@ -304,5 +304,45 @@ describe('recebedor de eventos no CRM', () => {
     crmUp = true; t = ob.nextAttemptAt;
     expect(await ob.flush()).toBe('delivered');
     expect(q.jobs.size).toBe(1);
+  });
+});
+
+// Motor REAL do conector (src/engine.js) com whatsapp-web.js falso, atrás da API HTTP real, falando com o
+// cliente real do CRM: o caminho completo de produção, sem Chrome e sem sessão.
+describe('ponta a ponta com o motor real do conector (biblioteca whatsapp-web.js falsa)', () => {
+  it('desconectado → 503 e "não saiu"; pronto → texto + enquete do CRM; repetição devolve o mesmo id', async () => {
+    const { createWhatsAppEngine } = await import('../../whatsapp-connector/src/engine.js');
+    const { EventEmitter } = await import('events');
+    const sent = [];
+    let client;
+    class Client extends EventEmitter {
+      constructor() { super(); client = this; }
+      async initialize() {}
+      async destroy() {}
+      async getNumberId(p) { return { _serialized: `${p}@c.us` }; }
+      async sendMessage(to, content) { sent.push({ to, content }); return { id: { _serialized: `true_${to}_${sent.length}` } }; }
+    }
+    class Poll { constructor(q, o) { this.q = q; this.o = o; } }
+    const engine = createWhatsAppEngine({ lib: { Client, LocalAuth: class {}, Poll }, authPath: os.tmpdir(), logger: { log() {}, warn() {}, error() {} }, catchUpDelayMs: 1e12 });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-e2e-'));
+    const app = createConnectorApp({ engine, store: new IdempotencyStore({ file: path.join(dir, 's.json') }), secret: SECRET, sendMinIntervalMs: 0 });
+    const s = await listen(app, { port: 0, host: '127.0.0.1' });
+    try {
+      const crm = createConnectorClient({ baseUrl: `http://127.0.0.1:${s.port}`, secret: SECRET });
+      await engine.start();
+      await expect(crm.sendMessage({ requestId: 'wweb:send:1', phone: '62999990000', text: 'oi' }))
+        .rejects.toMatchObject({ deliveryNotSent: true, code: 'NOT_CONNECTED' });
+      client.emit('ready');
+      const poll = { question: 'Confirme sua presença 💚', options: ['Confirmar presença ✅', 'Falar com a recepção'], fallbackText: 'x' };
+      const r = await crm.sendMessage({ requestId: 'wweb:send:2', phone: '62999990000', text: 'lembrete', kind: 'attendance_confirmation', poll });
+      expect(r.messageId).toMatch(/^true_5562999990000@c\.us/); // CRM normalizou o telefone antes de mandar
+      expect(sent.map((x) => (x.content instanceof Poll ? 'poll' : x.content))).toEqual(['lembrete', 'poll']);
+      const again = await crm.sendMessage({ requestId: 'wweb:send:2', phone: '62999990000', text: 'lembrete', kind: 'attendance_confirmation', poll });
+      expect(again.messageId).toBe(r.messageId);
+      expect(sent).toHaveLength(2);
+    } finally {
+      await engine.stop();
+      await s.close();
+    }
   });
 });
