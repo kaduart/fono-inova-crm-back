@@ -80,7 +80,7 @@ export function decidePlatforms({ first, phone, attr = {}, eventTimeMs, now = Da
       isAcquisition: false,
       done: true,
       meta: { ...skip }, google: { ...skip }, tiktok: { ...skip },
-      gclid: null, fbc: null, ttclid: null,
+      gclid: null, fbc: null, ttclid: null, ctwaClid: null,
     };
   }
 
@@ -88,7 +88,9 @@ export function decidePlatforms({ first, phone, attr = {}, eventTimeMs, now = Da
   const withinMetaWindow = ageMs < 6.5 * 864e5;    // Meta: ~7 dias
   const withinTikTokWindow = ageMs < 6.5 * 864e5;  // TikTok: ~7 dias
 
-  const meta = !phone ? { status: 'skipped', reason: 'sem_telefone' }
+  // 18/11: o clique do anúncio CTWA (ctwa_clid) identifica a pessoa na Meta mesmo sem telefone.
+  const ctwaClid = attr?.ctwaClid || null;
+  const meta = !phone && !ctwaClid ? { status: 'skipped', reason: 'sem_telefone' }
     : !withinMetaWindow ? { status: 'skipped', reason: 'fora_janela_7d_meta' }
     : { status: 'pending' };
 
@@ -104,7 +106,34 @@ export function decidePlatforms({ first, phone, attr = {}, eventTimeMs, now = Da
 
   const done = meta.status !== 'pending' && google.status !== 'pending' && tiktok.status !== 'pending';
 
-  return { isAcquisition: true, done, meta, google, tiktok, gclid, fbc: buildFbc(attr), ttclid };
+  return { isAcquisition: true, done, meta, google, tiktok, gclid, fbc: buildFbc(attr), ttclid, ctwaClid };
+}
+
+// 18/11: motivo de a conversão ficar "Não identificado" (source=unknown), para a tela e o backfill.
+//   sem_telefone          : nem o agendamento nem o paciente têm telefone válido para cruzar
+//   lead_sem_origem       : há Lead do telefone, mas sem origem (ex.: "Agenda Direta" criado pela secretária)
+//   sem_origem_capturada  : há telefone, mas a 1ª mensagem não trouxe sinal (anúncio, link do site, palavra-chave)
+export function unknownReasonFor({ phone, attr }) {
+  if (attr?.source) return null;
+  if (!phone) return 'sem_telefone';
+  return attr?.leadId ? 'lead_sem_origem' : 'sem_origem_capturada';
+}
+
+// 18/11: como enviar à Meta. Com ctwa_clid (conversa veio de anúncio click-to-WhatsApp) o evento vai
+// como business_messaging/whatsapp com o clid — é o que liga a conversão ao anúncio. Sem clid, segue
+// o envio antigo (website + telefone hash + fbc).
+export function metaSendOptions(conv = {}) {
+  if (conv.ctwaClid) return { actionSource: 'business_messaging', messagingChannel: 'whatsapp', ctwaClid: conv.ctwaClid };
+  return { actionSource: 'website', messagingChannel: null, ctwaClid: null };
+}
+
+// 18/11: quando um clid chega DEPOIS do enqueue, reabre o envio à Meta só se ele foi pulado por falta de
+// identificador e ainda está na janela de ~7 dias. Nunca reabre o que já foi aceito (sent) nem o que
+// não é aquisição.
+export function shouldReopenMetaForClid(conv = {}, now = Date.now()) {
+  if (!conv.isAcquisition) return false;
+  if (conv.meta?.status !== 'skipped' || conv.meta?.reason !== 'sem_telefone') return false;
+  return now - new Date(conv.eventTime).getTime() < 6.5 * 864e5;
 }
 
 // #2 Data COMPROVADA em que o agendamento virou conversão.

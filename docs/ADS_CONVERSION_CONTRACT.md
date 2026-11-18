@@ -105,3 +105,23 @@ Recomendação de rollout: `ADS_CONVERSION_DRY_RUN=true` por 1 dia → conferir 
 - **Google:** credenciais presentes; depende de `GOOGLE_ADS_CONVERSION_ACTION_ID`.
 - **Volume:** otimizar campanha pelo evento de maior volume (agendou) — clínica não fecha ~50 compras/semana
   que a Meta exige para sair do aprendizado otimizando por compra.
+
+## 8. Anúncio click-to-WhatsApp e "Não identificado" (18/11/2026)
+
+- **ctwa_clid:** o WhatsApp Web entrega `ctwaContext` com `conversionSource`, `conversionData`, `ctwaSignals`,
+  `sourceUrl`, `sourceId`, `sourceApp`… e SEM chave `ctwaClid`. `utils/ctwaContext.js#extractCtwa` procura o clid
+  na chave direta, em `externalAdReply`, em `ctwaSignals` e em `conversionData` (texto, JSON, base64 ou bytes).
+  O worker loga UMA vez por processo a estrutura (tipos/tamanhos, sem valores): `🧩 estrutura do ctwaContext`.
+  Desligar: `WA_CTWA_SHAPE_LOG=false`.
+- **Sem clid:** anúncio com `sourceId`/`sourceUrl` já é origem `meta_ads`/`instagram_ads` (confiança alta). O Lead do
+  telefone ganha `metaTracking.source=meta_ads`, `adId`, `adSourceUrl` e `ctwaClid` (`syncLeadCtwa`), só sobre
+  origem fraca (vazia, site, orgânico, palavra-chave instagram/facebook) e só em campo vazio.
+- **Meta CAPI com clid:** `action_source=business_messaging`, `messaging_channel=whatsapp`, `user_data.ctwa_clid`
+  (+ `whatsapp_business_account_id` se `META_WABA_ID`). Dataset: `META_BM_DATASET_ID` (se vazio, `META_PIXEL_ID`).
+  Sem clid segue `website` + telefone hash. Clid que chega depois reabre SÓ Meta pulada por `sem_telefone`,
+  na aquisição, dentro de 7 dias; `sent` nunca é reenviado.
+- **Telefone para todos:** o enqueue resolve telefone e origem também em retorno de paciente (antes ficava
+  `phone=null` e "Não identificado" para sempre). Envios desses continuam pulados. Identificadores de clique
+  (gclid/fbc/ttclid/clid) só na aquisição, porque o `google-offline.csv` lista toda AdConversion com gclid.
+- **`unknownReason`:** `sem_telefone` | `lead_sem_origem` (ex.: Lead "Agenda Direta") | `sem_origem_capturada`.
+- **Backfill único:** `scripts/_backfill-origem-adconversions.js` (simulação por padrão; `--since`, padrão 01/11).

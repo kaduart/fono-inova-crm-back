@@ -24,10 +24,14 @@ export async function sendEventToMeta({
     customData = {}, // Dados extras
     eventId,         // Deduplicação no Meta (ex: id do agendamento)
     eventTime,       // Date do evento real (default: agora)
-    actionSource = 'website'
+    actionSource = 'website',
+    ctwaClid = null,          // 18/11: clique do anúncio click-to-WhatsApp (business_messaging)
+    messagingChannel = null   // 'whatsapp' quando actionSource = 'business_messaging'
 }) {
     try {
-        const pixelId = process.env.META_PIXEL_ID;
+        const isMessaging = actionSource === 'business_messaging';
+        // Evento de conversa de WhatsApp vai para o dataset ligado ao WhatsApp (META_BM_DATASET_ID); sem ele, usa o pixel.
+        const pixelId = (isMessaging && process.env.META_BM_DATASET_ID) || process.env.META_PIXEL_ID;
         const accessToken = process.env.META_CONVERSIONS_TOKEN;
 
         if (!pixelId || !accessToken) {
@@ -48,6 +52,8 @@ export async function sendEventToMeta({
         }
         if (fbc) user_data.fbc = fbc;
         if (leadId) user_data.lead_id = [String(leadId)];
+        if (isMessaging && ctwaClid) user_data.ctwa_clid = String(ctwaClid);
+        if (isMessaging && process.env.META_WABA_ID) user_data.whatsapp_business_account_id = String(process.env.META_WABA_ID);
 
         // Custom data (valor, moeda, etc)
         const event_custom_data = { ...customData };
@@ -60,7 +66,9 @@ export async function sendEventToMeta({
                 event_time: Math.floor((eventTime ? new Date(eventTime).getTime() : Date.now()) / 1000),
                 ...(eventId && { event_id: String(eventId) }),
                 action_source: actionSource,
-                event_source_url: "https://clinicafonoinova.com.br",
+                ...(isMessaging
+                    ? { messaging_channel: messagingChannel || 'whatsapp' }
+                    : { event_source_url: "https://clinicafonoinova.com.br" }),
                 user_data,
                 custom_data: event_custom_data
             }]

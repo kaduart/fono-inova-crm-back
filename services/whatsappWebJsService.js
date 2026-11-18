@@ -951,10 +951,14 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
         for (const m of msgs.slice(-8)) {
           if (m.id?.fromMe || (m.t || 0) < since) continue;
           const ctx = m.ctwaContext || null;
+          // 18/11: leva também ctwaSignals/conversionData (o clid vem neles); extraído no Node por extractCtwa.
           out.push({
             phone,
             body: m.body || '',
-            ctwa: ctx ? { sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, ctwaClid: ctx.ctwaClid || null, title: ctx.title || null } : null,
+            ctwa: ctx ? {
+              sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, title: ctx.title || null,
+              ctwaClid: ctx.ctwaClid || null, ctwaSignals: ctx.ctwaSignals ?? null, conversionData: ctx.conversionData ?? null,
+            } : null,
           });
         }
       }
@@ -963,10 +967,12 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
 
     const { parseAttribution } = await import('../utils/attributionParser.js');
     const { captureInboundAttribution } = await import('./leadAttributionService.js');
+    const { extractCtwa } = await import('../utils/ctwaContext.js');
     let found = 0;
     for (const r of rows) {
-      if (!parseAttribution(r.body, r.ctwa)) continue;
-      const res = await captureInboundAttribution({ phone: r.phone, text: r.body, ctwa: r.ctwa, capturedBy: 'whatsapp_web_catchup' });
+      const ctwa = r.ctwa ? extractCtwa(r.ctwa) : null;
+      if (!parseAttribution(r.body, ctwa)) continue;
+      const res = await captureInboundAttribution({ phone: r.phone, text: r.body, ctwa, capturedBy: 'whatsapp_web_catchup' });
       if (res) found++;
     }
     console.log(`[WhatsAppWeb] 🔁 catch-up (Store): ${rows.length} msgs lidas, ${found} com origem (${hours}h)`);
@@ -1006,6 +1012,23 @@ async function resolveRealPhoneFromLid(msg, lid) {
 }
 
 // Fire-and-forget: extrai origem (site/anúncio) da mensagem recebida e grava por telefone.
+// Diagnóstico (18/11): loga UMA vez por processo a ESTRUTURA do ctwaContext (tipos e tamanhos, sem valores
+// nem dado pessoal), para confirmar onde o ctwa_clid vem. Desligar: WA_CTWA_SHAPE_LOG=false.
+let ctwaShapeLogged = false;
+function logCtwaShapeOnce(ctwaRaw, msgData) {
+  if (ctwaShapeLogged || process.env.WA_CTWA_SHAPE_LOG === 'false') return;
+  ctwaShapeLogged = true;
+  import('../utils/ctwaContext.js').then(({ describeCtwaShape }) => {
+    const ext = msgData?.contextInfo?.externalAdReply || msgData?.externalAdReply || null;
+    const ctwaKeysInMsg = Object.keys(msgData || {}).filter((k) => /ctwa|clid|externalAd|conversion/i.test(k));
+    console.log('[WhatsAppWeb] 🧩 estrutura do ctwaContext (sem valores):', JSON.stringify({
+      ctwaContext: describeCtwaShape(ctwaRaw),
+      externalAdReply: ext ? describeCtwaShape(ext) : null,
+      chavesNaMensagem: ctwaKeysInMsg,
+    }));
+  }).catch(() => {});
+}
+
 async function handleInboundAttribution(msg) {
   if (!msg || msg.fromMe || msg.isStatus) return;
   const from = msg.from || '';
@@ -1016,10 +1039,14 @@ async function handleInboundAttribution(msg) {
 
   // Checagem barata antes de qualquer I/O
   const { parseAttribution } = await import('../utils/attributionParser.js');
-  const ctwa = ctwaRaw
-    ? { sourceId: ctwaRaw.sourceId || null, sourceUrl: ctwaRaw.sourceUrl || null, ctwaClid: ctwaRaw.ctwaClid || null, title: ctwaRaw.title || null }
-    : null;
-  if (ctwaRaw) console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','));
+  // 18/11: o ctwa_clid não vem numa chave "ctwaClid"; extractCtwa procura em ctwaSignals/conversionData/externalAdReply.
+  const { extractCtwa } = await import('../utils/ctwaContext.js');
+  const ctwa = extractCtwa(ctwaRaw, msg._data);
+  if (ctwaRaw) {
+    console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','),
+      `| anúncio=${ctwa?.sourceId ? 'sim' : 'não'} clid=${ctwa?.ctwaClid ? `sim (${ctwa.clidFrom})` : 'não'}`);
+    logCtwaShapeOnce(ctwaRaw, msg._data);
+  }
   if (!parseAttribution(text, ctwa)) return;
 
   let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;

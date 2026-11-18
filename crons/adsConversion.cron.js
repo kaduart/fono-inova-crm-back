@@ -28,6 +28,7 @@ import {
   BOOKED_STATUSES, resolveMainPhone, decidePlatforms,
   interpretMetaResponse, interpretTiktokResponse, buildFbc,
   resolveConversionTime, shouldAcquire, eventIdFor, buildPendingClaim,
+  unknownReasonFor, metaSendOptions, shouldReopenMetaForClid,
 } from './adsConversion.logic.js';
 
 const TAG = '[AdsConversion]';
@@ -122,7 +123,10 @@ async function enqueueNew() {
     if (knownSet.has(String(appt._id))) continue;
     try {
       const first = await isAcquisitionAppointment(appt);
-      const phone = first ? await resolvePhone(appt) : null;
+      // 18/11: telefone e origem também para quem NÃO é 1º agendamento. Antes ficavam null e a conversão
+      // nascia "Não identificado" para sempre (o refresh só olha quem tem telefone). Os envios continuam
+      // pulados (decidePlatforms com first=false não devolve gclid/fbc/ttclid/clid).
+      const phone = await resolvePhone(appt);
       const attrByPhone = phone ? await getAttributionByPhone(phone) : null;
       const attr = first ? await withGclidFallback({ leadId: appt.lead || null, phone, attr: attrByPhone }) : attrByPhone;
       const value = Number(appt.sessionValue) > 0 ? Number(appt.sessionValue) : defaultValue();
@@ -137,6 +141,7 @@ async function enqueueNew() {
         isAcquisition: d.isAcquisition,  // #1/#3 marca a aquisição
         phone,
         source: attr?.source || 'unknown',
+        unknownReason: unknownReasonFor({ phone, attr }),
         attributionMethod: attr?.method || null,
         adId: attr?.adId || null,
         campaign: attr?.campaign || null,
@@ -145,6 +150,7 @@ async function enqueueNew() {
         gclid: d.gclid,
         fbc: d.fbc,
         ttclid: d.ttclid,
+        ctwaClid: d.ctwaClid || null,
         meta: d.meta,
         google: d.google,
         tiktok: d.tiktok,
@@ -164,7 +170,7 @@ async function enqueueNew() {
         // Já existe a aquisição do paciente → grava este como não-aquisição (idempotente por appointment).
         if (err?.code !== 11000 || !err?.keyPattern?.patient) throw err;
         const skip = decidePlatforms({ first: false });
-        await AdConversion.create({ ...doc, ...skip, phone: null, gclid: null, fbc: null, ttclid: null });
+        await AdConversion.create({ ...doc, ...skip, gclid: null, fbc: null, ttclid: null, ctwaClid: null });
       }
       queued++;
     } catch (err) {
@@ -182,7 +188,7 @@ async function refreshUnknownSources() {
     source: 'unknown',
     phone: { $ne: null },
     createdAt: { $gte: since },
-  }).select('_id phone').limit(300).lean();
+  }).select('_id phone isAcquisition meta eventTime unknownReason').limit(300).lean();
 
   if (!unknown.length) return 0;
 
@@ -195,15 +201,35 @@ async function refreshUnknownSources() {
   for (const u of unknown) {
     try {
       const attr = attrByPhone.get(u.phone);
-      if (!attr?.source) continue;
+      if (!attr?.source) {
+        if (!u.unknownReason) await AdConversion.updateOne({ _id: u._id, unknownReason: null }, { $set: { unknownReason: 'sem_origem_capturada' } });
+        continue;
+      }
+      // 18/11: identificadores de clique só na AQUISIÇÃO. O google-offline.csv lista toda AdConversion
+      // com gclid, então gravar gclid em retorno de paciente antigo criaria conversão falsa no Google.
+      const ids = u.isAcquisition ? {
+        ...(attr.gclid ? { gclid: attr.gclid } : {}),
+        ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}),
+        ...(attr.ttclid ? { ttclid: attr.ttclid } : {}),
+        ...(attr.ctwaClid ? { ctwaClid: attr.ctwaClid } : {}),
+      } : {};
       const res = await AdConversion.updateOne(
         { _id: u._id, source: 'unknown' },
-        { $set: { source: attr.source, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...(attr.gclid ? { gclid: attr.gclid } : {}), ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}), ...(attr.ttclid ? { ttclid: attr.ttclid } : {}) } }
+        { $set: { source: attr.source, unknownReason: null, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...ids } }
       );
       updated += res.modifiedCount || 0;
 
+      // ctwa_clid chegou depois: reabre SÓ a Meta, se ela foi pulada por falta de identificador (7 dias)
+      if (res.modifiedCount && ids.ctwaClid && shouldReopenMetaForClid(u)) {
+        await AdConversion.updateOne(
+          { _id: u._id, 'meta.status': 'skipped', 'meta.reason': 'sem_telefone' },
+          { $set: { meta: { status: 'pending' }, done: false, nextAttemptAt: new Date() } }
+        );
+        console.log(`${TAG} 🔁 ${u._id} ganhou ctwa_clid: Meta reaberta`);
+      }
+
       // gclid chegou depois: reabre SÓ o envio ao Google (meta intocado), dentro de 90 dias
-      if (res.modifiedCount && attr.gclid) {
+      if (res.modifiedCount && ids.gclid) {
         await AdConversion.updateOne(
           {
             _id: u._id,
@@ -216,7 +242,7 @@ async function refreshUnknownSources() {
       }
 
       // ttclid chegou depois: reabre SÓ o envio ao TikTok, dentro da janela de 7 dias
-      if (res.modifiedCount && attr.ttclid) {
+      if (res.modifiedCount && ids.ttclid) {
         await AdConversion.updateOne(
           {
             _id: u._id,
@@ -232,6 +258,67 @@ async function refreshUnknownSources() {
     }
   }
   return updated;
+}
+
+// ─── 18/11: conversão com origem Meta mas sem ctwa_clid: o clid pode ser capturado DEPOIS ───
+// (a captura antiga nunca salvava o clid). Completa o clid e reabre a Meta só se ela foi pulada por
+// falta de identificador. O que já foi aceito (sent) não é reenviado.
+async function fillMissingCtwaClid() {
+  const conv = await AdConversion.find({
+    isAcquisition: true,
+    ctwaClid: null,
+    phone: { $ne: null },
+    source: { $in: ['meta_ads', 'instagram_ads'] },
+    eventTime: { $gte: new Date(Date.now() - 6.5 * 864e5) },
+  }).select('_id phone isAcquisition meta eventTime').limit(100).lean();
+  if (!conv.length) return 0;
+  const attrByPhone = await getAttributionsByPhones(conv.map((c) => c.phone));
+  let filled = 0;
+  for (const c of conv) {
+    try {
+      const clid = attrByPhone.get(c.phone)?.ctwaClid;
+      if (!clid) continue;
+      const res = await AdConversion.updateOne({ _id: c._id, ctwaClid: null }, { $set: { ctwaClid: clid } });
+      if (!res.modifiedCount) continue;
+      filled++;
+      if (shouldReopenMetaForClid(c)) {
+        await AdConversion.updateOne(
+          { _id: c._id, 'meta.status': 'skipped', 'meta.reason': 'sem_telefone' },
+          { $set: { meta: { status: 'pending' }, done: false, nextAttemptAt: new Date() } }
+        );
+      }
+    } catch (err) {
+      console.error(`${TAG} ❌ ctwa_clid ${c._id}:`, err.message);
+    }
+  }
+  if (filled) console.log(`${TAG} 🔗 ctwa_clid completado em ${filled} conversões`);
+  return filled;
+}
+
+// ─── 18/11: conversões sem telefone que NÃO são aquisição (retorno de paciente) ─────────────
+// O enqueue antigo nem buscava telefone para elas, então ficavam "Não identificado" para sempre.
+// Só preenche telefone/origem para relatório; os envios continuam pulados (nao_e_primeiro_agendamento).
+async function fillPhoneForNonAcquisition() {
+  const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5);
+  const docs = await AdConversion.find({
+    phone: null, isAcquisition: false, source: 'unknown', unknownReason: null, createdAt: { $gte: since },
+  }).select('_id appointment').limit(100).lean();
+  let filled = 0;
+  for (const d of docs) {
+    try {
+      const appt = await Appointment.findById(d.appointment).select('patient patientInfo.phone').lean();
+      const phone = appt ? await resolvePhone(appt) : null;
+      if (!phone) {
+        await AdConversion.updateOne({ _id: d._id, unknownReason: null }, { $set: { unknownReason: 'sem_telefone' } });
+        continue;
+      }
+      const res = await AdConversion.updateOne({ _id: d._id, phone: null }, { $set: { phone } });
+      filled += res.modifiedCount || 0;
+    } catch (err) {
+      console.error(`${TAG} ❌ telefone ${d._id}:`, err.message);
+    }
+  }
+  return filled;
 }
 
 // ─── Recupera aquisições sem telefone: o número pode aparecer DEPOIS do enqueue ──────
@@ -265,6 +352,8 @@ async function recoverMissingPhone() {
       }
       if (attr?.fbclid) conv.fbc = buildFbc(attr);
       if (attr?.ttclid) conv.ttclid = attr.ttclid;
+      if (attr?.ctwaClid) conv.ctwaClid = attr.ctwaClid;
+      if (attr?.source) conv.unknownReason = null;
       conv.meta = within ? { status: 'pending' } : { status: 'skipped', reason: 'fora_janela_7d_meta' };
       if (conv.tiktok?.reason === 'sem_identificador') {
         conv.tiktok = within ? { status: 'pending' } : { status: 'skipped', reason: 'fora_janela_7d_tiktok' };
@@ -296,17 +385,22 @@ async function processPending() {
     if (conv.meta?.status === 'pending' || conv.meta?.status === 'failed') {
       try {
         const eventTime = conv.eventTime; // já filtrado na janela de 7 dias no enqueue
+        // 18/11: com ctwa_clid vai como business_messaging/whatsapp (liga ao anúncio); sem, website (clínica).
+        const opt = metaSendOptions(conv);
         const r = await sendPurchaseToMeta({
           phone: conv.phone,
           fbc: conv.fbc,
           value: conv.value,
           eventId: eventIdFor(conv.appointment),
           eventTime,
-          actionSource: 'website', // atendimento na clínica
+          actionSource: opt.actionSource,
+          messagingChannel: opt.messagingChannel,
+          ctwaClid: opt.ctwaClid,
           customData: { lead_source: conv.source },
         });
         // #4 Interpreta a resposta: events_received>=1 = aceito; 0/ausente = recusado (NÃO sucesso).
-        const res = interpretMetaResponse(r, { pixel: process.env.META_PIXEL_ID || null, event: 'Purchase', actionSource: 'website' });
+        const pixel = (opt.ctwaClid && process.env.META_BM_DATASET_ID) || process.env.META_PIXEL_ID || null;
+        const res = interpretMetaResponse(r, { pixel, event: 'Purchase', actionSource: opt.actionSource });
         conv.meta = {
           status: res.status,
           sentAt: res.status === 'sent' ? new Date() : null,
@@ -384,9 +478,11 @@ async function runOnce() {
   try {
     const queued = await enqueueNew();
     const recovered = isDryRun() ? 0 : await recoverMissingPhone();
+    const phonesFilled = isDryRun() ? 0 : await fillPhoneForNonAcquisition();
     const reclassified = isDryRun() ? 0 : await refreshUnknownSources();
+    const clidFilled = isDryRun() ? 0 : await fillMissingCtwaClid();
     const sent = isDryRun() ? 0 : await processPending();
-    if (queued || sent || reclassified || recovered) console.log(`${TAG} ✅ novos=${queued} recuperados=${recovered} reclassificados=${reclassified} enviados=${sent} em ${Date.now() - t0}ms`);
+    if (queued || sent || reclassified || recovered || phonesFilled || clidFilled) console.log(`${TAG} ✅ novos=${queued} recuperados=${recovered} telefones=${phonesFilled} reclassificados=${reclassified} clid=${clidFilled} enviados=${sent} em ${Date.now() - t0}ms`);
   } catch (err) {
     console.error(`${TAG} ❌ Erro:`, err.message);
   } finally {
@@ -402,5 +498,5 @@ export function initAdsConversionCron() {
   return { stop: () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } } };
 }
 
-export { runOnce as runAdsConversionOnce, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, isAcquisitionAppointment, resolvePhone };
+export { runOnce as runAdsConversionOnce, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, fillMissingCtwaClid, fillPhoneForNonAcquisition, isAcquisitionAppointment, resolvePhone };
 export default { initAdsConversionCron };
