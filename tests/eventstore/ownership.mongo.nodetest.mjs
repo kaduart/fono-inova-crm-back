@@ -1,0 +1,283 @@
+// Testes locais da posse de execução do Event Store.
+// Rodam só com MONGO_TEST_URI apontando para um MongoDB DESCARTÁVEL em
+// loopback (os testes criam e apagam bancos). Dados fictícios.
+//
+//   MONGO_TEST_URI='mongodb://127.0.0.1:27017/?directConnection=true' \
+//     node --test tests/eventstore/ownership.mongo.nodetest.mjs
+import { test, before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import mongoose from 'mongoose';
+
+import EventStore from '../../models/EventStore.js';
+import {
+  claimEvent, completeOwned, failOwned, renewLease, leaseMsFromEnv, DEFAULT_LEASE_MS
+} from '../../infrastructure/events/eventOwnership.js';
+import {
+  processWithGuarantees, markEventProcessed, MAX_FAILED_ATTEMPTS
+} from '../../infrastructure/events/eventStoreService.js';
+import { reapStuckEvents, MAX_RECOVERIES } from '../../crons/eventReaper.cron.js';
+import { resolveEventReaperOwner } from '../../config/cronManager.js';
+
+const URI = process.env.MONGO_TEST_URI;
+const skip = !URI ? 'MONGO_TEST_URI não definido' : false;
+if (URI) {
+  const host = new URL(URI).hostname;
+  if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) throw new Error('MONGO_TEST_URI precisa ser loopback');
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let seq = 0;
+const newId = (p = 'evt') => `${p}-${process.pid}-${Date.now()}-${seq++}`;
+
+async function seed(overrides = {}) {
+  const eventId = overrides.eventId || newId();
+  await EventStore.collection.insertOne({
+    eventId,
+    eventType: 'APPOINTMENT_CREATED',
+    aggregateType: 'appointment',
+    aggregateId: 'agg-ficticio',
+    payload: { nome: 'PACIENTE FICTICIO' },
+    status: 'pending',
+    attempts: 0,
+    createdAt: new Date(),
+    ...overrides
+  });
+  return eventId;
+}
+const get = (eventId) => EventStore.findOne({ eventId }).lean();
+
+before(async () => {
+  if (skip) return;
+  await mongoose.connect(URI, { dbName: `crm_posse_teste_${Date.now()}` });
+});
+after(async () => {
+  if (skip) return;
+  await mongoose.connection.dropDatabase();
+  await mongoose.disconnect();
+});
+beforeEach(async () => { if (!skip) await EventStore.deleteMany({}); });
+
+test('EVENT_REAPER_OWNER: padrão node, kas aceito, inválido falha claramente', () => {
+  assert.equal(resolveEventReaperOwner({}), 'node');
+  assert.equal(resolveEventReaperOwner({ EVENT_REAPER_OWNER: '' }), 'node');
+  assert.equal(resolveEventReaperOwner({ EVENT_REAPER_OWNER: 'node' }), 'node');
+  assert.equal(resolveEventReaperOwner({ EVENT_REAPER_OWNER: ' KAS ' }), 'kas');
+  assert.throws(() => resolveEventReaperOwner({ EVENT_REAPER_OWNER: 'false' }), /EVENT_REAPER_OWNER inválido: "false"/);
+  assert.throws(() => resolveEventReaperOwner({ EVENT_REAPER_OWNER: 'both' }), /Use "node" \(padrão\) ou "kas"/);
+});
+
+test('EVENT_LEASE_MS: padrão 60 s, inválido falha', () => {
+  assert.equal(leaseMsFromEnv({}), DEFAULT_LEASE_MS);
+  assert.equal(leaseMsFromEnv({ EVENT_LEASE_MS: '90000' }), 90000);
+  assert.throws(() => leaseMsFromEnv({ EVENT_LEASE_MS: '10' }), /EVENT_LEASE_MS inválido/);
+  assert.throws(() => leaseMsFromEnv({ EVENT_LEASE_MS: 'abc' }), /EVENT_LEASE_MS inválido/);
+});
+
+test('caminho feliz: token único por execução, posse limpa ao concluir', { skip }, async () => {
+  const id = await seed();
+  let seen;
+  const r = await processWithGuarantees({ eventId: id }, async (_e, ctx) => {
+    seen = ctx.token;
+    const doc = await get(id);
+    assert.equal(doc.status, 'processing');
+    assert.equal(doc.processingToken, ctx.token);
+    assert.ok(doc.leaseExpiresAt > new Date());
+    return 'ok';
+  }, 'workerFicticio', { leaseMs: 5000 });
+  assert.deepEqual(r, { success: true, result: 'ok' });
+  const doc = await get(id);
+  assert.equal(doc.status, 'processed');
+  assert.equal(doc.processedBy, 'workerFicticio');
+  assert.equal(doc.processingToken, undefined);
+  assert.equal(doc.leaseExpiresAt, undefined);
+  assert.ok(seen);
+  // Segunda execução do mesmo evento: não roda o processador.
+  let ran = false;
+  const again = await processWithGuarantees({ eventId: id }, async () => { ran = true; }, 'workerFicticio');
+  assert.equal(again.skipped, true);
+  assert.equal(again.reason, 'already_processed');
+  assert.equal(ran, false);
+});
+
+test('worker lento: a posse é renovada e o reaper não retoma', { skip }, async () => {
+  const id = await seed();
+  let reaps = 0;
+  const reaper = (async () => {
+    for (let i = 0; i < 12; i++) { const r = await reapStuckEvents(); reaps += r.total; await sleep(100); }
+  })();
+  const r = await processWithGuarantees({ eventId: id }, async () => { await sleep(1300); return 'lento'; }, 'workerLento', { leaseMs: 300 });
+  await reaper;
+  assert.equal(r.success, true);
+  assert.equal(reaps, 0, 'o reaper não pode achar um evento com posse renovada');
+  assert.equal((await get(id)).status, 'processed');
+});
+
+test('segunda entrega concorrente encontra posse viva e recebe erro retentável', { skip }, async () => {
+  const id = await seed();
+  let release;
+  const first = processWithGuarantees({ eventId: id }, () => new Promise(r => { release = r; }), 'w1', { leaseMs: 5000 });
+  await sleep(50);
+  await assert.rejects(processWithGuarantees({ eventId: id }, async () => 'dup', 'w2', { leaseMs: 5000 }), { code: 'EVENT_BUSY' });
+  release('ok');
+  assert.equal((await first).success, true);
+});
+
+test('perda de posse: worker travado não conclui depois que outro retomou', { skip }, async () => {
+  const id = await seed();
+  let otherToken;
+  let signalAborted;
+  const r = await processWithGuarantees({ eventId: id }, async (_e, ctx) => {
+    const end = Date.now() + 700;
+    while (Date.now() < end) { /* event loop travado: nenhuma renovação roda */ }
+    const other = await claimEvent(id, 'workerNovo', { leaseMs: 5000 });
+    assert.equal(other.status, 'claimed', 'posse vencida deve ser retomável');
+    otherToken = other.token;
+    await sleep(250); // dá tempo de a renovação perceber a perda
+    signalAborted = ctx.signal.aborted;
+    return 'efeito-ja-executado';
+  }, 'workerVelho', { leaseMs: 300 });
+  assert.equal(r.success, false);
+  assert.equal(r.ownershipLost, true);
+  assert.equal(signalAborted, true, 'o processador é avisado pelo AbortSignal');
+  const doc = await get(id);
+  assert.equal(doc.status, 'processing');
+  assert.equal(doc.processingToken, otherToken, 'o registro continua do novo dono');
+  // O dono antigo também não consegue registrar falha nem renovar.
+  assert.equal(await failOwned(id, 'token-antigo', new Error('x')), null);
+  assert.equal(await renewLease(id, 'token-antigo'), false);
+  assert.equal((await get(id)).attempts, 0);
+});
+
+test('conclusão simultânea ao reaper: nunca as duas coisas', { skip }, async () => {
+  const n = 200;
+  const tokens = [];
+  for (let i = 0; i < n; i++) {
+    const id = await seed({ eventId: `sim-${i}` });
+    const c = await claimEvent(id, 'w', { leaseMs: 1 });
+    tokens.push([id, c.token]);
+  }
+  await sleep(20); // todas as posses vencem
+  const [reap, completions] = await Promise.all([
+    reapStuckEvents({ batchSize: 1000 }),
+    Promise.all(tokens.map(([id, t]) => completeOwned(id, t, 'w')))
+  ]);
+  const docs = await EventStore.find({}).lean();
+  const byId = new Map(docs.map(d => [d.eventId, d]));
+  let completed = 0;
+  tokens.forEach(([id], i) => {
+    const d = byId.get(id);
+    if (completions[i]) {
+      completed++;
+      assert.equal(d.status, 'processed', `${id}: conclusão aceita mas status ${d.status}`);
+      assert.equal(d.recoveryCount, undefined);
+    } else {
+      assert.equal(d.status, 'pending', `${id}: sem conclusão deveria estar recuperado`);
+      assert.equal(d.recoveryCount, 1);
+    }
+  });
+  const recovered = reap.reset + reap.failed + reap.deadLetter;
+  assert.equal(recovered + completed, n);
+  assert.equal(reap.total, recovered + reap.lostRace);
+});
+
+test('reinício: execução abandonada é retomada pelo reaper e reprocessada', { skip }, async () => {
+  const id = await seed();
+  const c = await claimEvent(id, 'workerQueMorreu', { leaseMs: 200 });
+  assert.equal(c.status, 'claimed');
+  // o processo morre aqui: sem conclusão, sem renovação
+  assert.equal((await reapStuckEvents()).total, 0, 'posse ainda viva');
+  await sleep(250);
+  const r = await reapStuckEvents();
+  assert.equal(r.reset, 1);
+  let doc = await get(id);
+  assert.equal(doc.status, 'pending');
+  assert.equal(doc.recoveryCount, 1);
+  assert.equal(doc.error.code, 'RECOVERED_STUCK_PROCESSING');
+  assert.equal(doc.processingToken, undefined);
+  const again = await processWithGuarantees({ eventId: id }, async () => 'ok', 'workerNovo', { leaseMs: 5000 });
+  assert.equal(again.success, true);
+  doc = await get(id);
+  assert.equal(doc.status, 'processed');
+  assert.equal(doc.recoveryCount, 1, 'o histórico de recuperações fica');
+});
+
+test('dois reapers ao mesmo tempo: cada evento recuperado uma vez', { skip }, async () => {
+  const n = 300;
+  for (let i = 0; i < n; i++) {
+    const id = await seed({ eventId: `dois-${i}`, attempts: i % 4 });
+    await claimEvent(id, 'w', { leaseMs: 1 });
+  }
+  await sleep(20);
+  const [a, b] = await Promise.all([reapStuckEvents({ batchSize: 1000 }), reapStuckEvents({ batchSize: 1000 })]);
+  const applied = a.reset + a.failed + b.reset + b.failed;
+  assert.equal(applied, n);
+  assert.equal(a.lostRace + b.lostRace, a.total + b.total - n);
+  const wrong = await EventStore.countDocuments({ recoveryCount: { $ne: 1 } });
+  assert.equal(wrong, 0);
+  assert.equal(await EventStore.countDocuments({ status: 'failed' }), n / 4); // attempts 3
+});
+
+test(`esgotamento: ${MAX_RECOVERIES}º abandono vai para dead_letter com alerta`, { skip }, async () => {
+  const id = await seed();
+  const alerts = [];
+  const alert = async (a) => { alerts.push(a); };
+  for (let round = 1; round <= MAX_RECOVERIES; round++) {
+    const c = await claimEvent(id, 'workerQueCai', { leaseMs: 1 });
+    assert.equal(c.status, 'claimed', `rodada ${round}`);
+    await sleep(10);
+    await reapStuckEvents({ alert });
+  }
+  const doc = await get(id);
+  assert.equal(doc.status, 'dead_letter');
+  assert.equal(doc.recoveryCount, MAX_RECOVERIES);
+  assert.equal(doc.error.code, 'RECOVERY_LIMIT_EXCEEDED');
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].type, 'event_recovery_limit');
+  assert.equal(alerts[0].level, 'critical');
+  assert.doesNotMatch(JSON.stringify(alerts[0]), /PACIENTE/);
+  // dead_letter não é mais reivindicado nem reprocessado
+  assert.equal((await claimEvent(id, 'w')).status, 'dead_letter');
+  const r = await processWithGuarantees({ eventId: id }, async () => { throw new Error('não deveria rodar'); }, 'w');
+  assert.equal(r.reason, 'dead_letter');
+});
+
+test(`falhas retentáveis: dead_letter na ${MAX_FAILED_ATTEMPTS}ª, como antes`, { skip }, async () => {
+  const id = await seed();
+  for (let i = 1; i <= MAX_FAILED_ATTEMPTS; i++) {
+    await assert.rejects(processWithGuarantees({ eventId: id }, async () => { throw new Error('ECONNRESET ficticio'); }, 'w', { leaseMs: 5000 }));
+    const doc = await get(id);
+    assert.equal(doc.attempts, i);
+    assert.equal(doc.status, i < MAX_FAILED_ATTEMPTS ? 'failed' : 'dead_letter');
+    assert.equal(doc.processingToken, undefined);
+  }
+});
+
+test('escrita legada sem token não passa por cima de posse viva', { skip }, async () => {
+  const id = await seed();
+  const c = await claimEvent(id, 'dono', { leaseMs: 5000 });
+  assert.equal(await markEventProcessed(id, 'legado'), null);
+  assert.equal((await get(id)).status, 'processing');
+  assert.equal(await completeOwned(id, c.token, 'dono'), true);
+  // sem posse viva, a escrita legada continua funcionando
+  const id2 = await seed();
+  assert.equal((await markEventProcessed(id2, 'legado')).status, 'processed');
+});
+
+test('evento processing antigo sem posse (código anterior): critério legado de 15 min', { skip }, async () => {
+  const old = await seed({ status: 'processing', attempts: 1, createdAt: new Date(Date.now() - 20 * 60_000) });
+  const young = await seed({ status: 'processing', attempts: 1, createdAt: new Date(Date.now() - 60_000) });
+  const r = await reapStuckEvents();
+  assert.equal(r.reset, 1);
+  const d = await get(old);
+  assert.equal(d.status, 'pending');
+  assert.equal(d.error.message, 'Auto-recovered from stuck processing after 15min');
+  assert.equal((await get(young)).status, 'processing');
+  // e um worker novo também pode retomar o antigo sem posse
+  const o2 = await seed({ status: 'processing', createdAt: new Date(Date.now() - 20 * 60_000) });
+  assert.equal((await claimEvent(o2, 'w')).status, 'claimed');
+});
+
+test('evento fora do Event Store: caminho legado sem posse, sem quebrar', { skip }, async () => {
+  const r = await processWithGuarantees({ eventId: 'idem-key-que-nao-e-evento' }, async () => 'ok', 'w');
+  assert.deepEqual(r, { success: true, result: 'ok' });
+});
