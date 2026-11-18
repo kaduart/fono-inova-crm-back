@@ -9,9 +9,9 @@ Separação de responsabilidades preservada: **CRM** (regras de negócio), **con
 | Item pedido | Estado |
 |---|---|
 | 1. Servidor real do conector | **Implementado** em `whatsapp-connector/` como projeto separado (motor whatsapp-web.js próprio, contrato HMAC, sessão protegida). Testado com biblioteca falsa e simulador; **nunca** conectado ao WhatsApp real. |
-| 2. Memória | Medido e estimado separados (seção 7). Os "250 MB" antigos eram estimativa e saíram. |
+| 2. Memória | Método, processos e RSS × PSS × cgroup na seção 7.0; medido e estimado separados (seção 7). Os "250 MB" antigos eram estimativa e saíram. |
 | 3. Modo externo nunca abre Chrome | Garantido em 3 pontos e testado, inclusive com o conector fora do ar (seção 5). Falha visível no painel, sem fallback. |
-| 4. Reinício, exclusividade e transferência | Seções 8 e 9. Trava de sessão + marcador de transferência + `takeoverOnConflict=false`. |
+| 4. Reinício, exclusividade e transferência | Seções 8 a 10. A trava é **só local** (9.1): entre hosts a exclusividade depende do procedimento. Trava de sessão + marcador de transferência + `takeoverOnConflict=false`. |
 | 5. Reversão | Seção 11: exige reinício do crm-worker e **volta ao risco de OOM** de antes. |
 | 6. Baseline da suíte | Seção 12: main × branch, mesmo comando e ambiente. Nenhuma regressão. |
 | Hospedagem | **Bloqueada**: não há capacidade sem custo (seção 2). Nada foi criado. |
@@ -136,6 +136,22 @@ Instalação no host: `cd whatsapp-connector && npm install` (gera o lockfile; a
 
 ## 7. Memória: medido × estimado (item 2)
 
+### 7.0 Método e o que cada número significa
+
+- **RSS** (`VmRSS` em `/proc/<pid>/status`): memória residente de **um** processo. Páginas compartilhadas (bibliotecas do Chrome, memória compartilhada entre renderer e browser) entram no RSS de **cada** processo que as usa. Por isso somar RSS de vários processos **superestima**.
+- **PSS** (`Pss` em `/proc/<pid>/smaps_rollup`): divide cada página compartilhada entre os processos que a usam. A soma de PSS de uma árvore é a melhor estimativa de quanto aquele conjunto ocupa.
+- **cgroup** (`/sys/fs/cgroup/memory.current`, limite em `memory.max`): o total que o kernel cobra do **container inteiro**, contando cada página uma vez, mais cache de arquivos e memória do kernel. É **este** número que o Render compara com 2 GB para matar por OOM.
+
+Como cada número foi obtido:
+
+| Fonte | Como mede | Processos incluídos |
+|---|---|---|
+| Produção (7.1) | log `containerBreakdown()` do `workers/entrypoints/whatsapp-child.js`, já em produção: lê `VmRSS` de cada pid em `/proc` e `memory.current/max` do cgroup | pai = `process.ppid`; filho = o próprio processo; Chrome = todo pid com `chrome` na linha de comando, agrupado por `--type=`; cgroup = container inteiro |
+| Worker local (7.2) | `scripts/medir-memoria-worker-externo.mjs`: `process.memoryUsage().rss` depois de `global.gc()` | só o processo pai do crm-worker; o conector simulado roda em **outro** processo e fica fora da conta |
+| Conector local (7.2) | `whatsapp-connector/scripts/measure-memory.mjs`: `process.memoryUsage().rss` para o Node; `processTreeMemory(pid)` (`src/procMem.js`, RSS e PSS por descendente) para o processo do conector e para o Chrome | Node do conector; árvore do Chrome a partir do pid do browser (browser, renderer, gpu, utility, zygote) |
+
+Não há cgroup isolado nas medições locais (o container da nuvem é compartilhado com outras coisas), então localmente só existem RSS e PSS.
+
 ### 7.1 Produção, medido (log do crm-worker, 18/11, 20:27–20:48 UTC, só leitura)
 
 | Parte | RSS |
@@ -200,11 +216,29 @@ Do processo inteiro (deploy, queda do host):
 
 CRM e conector **nunca** podem abrir a mesma sessão ao mesmo tempo. Três travas:
 
-1. **Trava em disco** `.connector-lock.json` (criação exclusiva, 0600) na pasta da sessão do conector. Outro processo vivo no mesmo host: o conector não sobe. Processo morto no mesmo host: a trava é recuperada. Trava de **outro host**: só assume com `WA_SESSION_TAKEOVER=<nome daquele host>`.
+1. **Trava em disco** `.connector-lock.json` (criação exclusiva, 0600) na pasta da sessão do conector. Outro processo vivo no mesmo host: o conector não sobe. Processo morto no mesmo host: a trava é recuperada. Trava gravada por **outro host** no mesmo disco (disco movido ou restaurado): só assume com `WA_SESSION_TAKEOVER=<nome daquele host>`.
 2. **Marcador de transferência** `.session-transferred.json` na pasta da sessão de origem. Com ele, o crm-worker no modo local **não abre Chrome** (status `session_transferred`) e o conector também não sobe naquela pasta.
 3. **`takeoverOnConflict=false`** no whatsapp-web.js: se as duas pontas abrirem a sessão, nenhuma derruba a outra; quem detectar o conflito para e mostra `conflict`.
 
 Pastas da sessão com permissão 0700 e umask 077 (só o dono lê).
+
+### 9.1 Alcance real das travas
+
+| Proteção | Alcance | Impede uso em dois hosts ao mesmo tempo? |
+|---|---|---|
+| `.connector-lock.json` | **Só aquele disco.** Protege contra dois processos na mesma pasta (dois conectores, conector + import). | **Não.** O crm-worker (disco do Render) e o host do conector têm discos diferentes; um não enxerga a trava do outro. |
+| `.session-transferred.json` | **Só o disco de origem.** Impede que o crm-worker volte ao Chrome local (e que um conector suba naquela pasta). | Só do lado da origem, e só depois do `release`. Não impede uma **cópia** antiga da sessão de ser aberta em outro host. |
+| `takeoverOnConflict=false` | Lado WhatsApp: quando dois aparelhos usam a mesma sessão, o WhatsApp avisa `CONFLICT`. | **Não impede**, só **detecta depois**: quem recebe o conflito para em `conflict` e não briga pela sessão. Mensagens no intervalo podem ir para qualquer um dos dois. |
+| `reclaim` confere `/v1/health` | Rede: recusa reverter se o conector ainda responde. | Parcial: depende de o conector estar alcançável; um conector vivo mas inalcançável passa. |
+
+Conclusão: **não existe trava distribuída** entre hosts. A exclusividade entre crm-worker e conector depende do **procedimento** (seção 10), cuja ordem garante que só uma ponta abre a sessão em cada momento:
+
+1. A origem para de usar a sessão (modo externo + reinício) **antes** de qualquer cópia ou QR.
+2. `release` confere que não há Chrome na pasta e grava o marcador, que impede a origem de reabrir.
+3. Só então o destino sobe (QR novo ou importação com hash).
+4. Na volta, o destino para **antes** do `reclaim`, e o `reclaim` recusa se o conector ainda responde.
+
+Recomendação reforçada: **opção B (QR novo)**. Com QR novo cada ponta tem a **sua** credencial e o aparelho antigo é removido no celular, então não existe cópia da mesma sessão que possa ser aberta por engano. Na opção A a cópia é a mesma credencial em dois discos; apague a de origem depois de confirmar o destino.
 
 ## 10. Transferência segura (item 4)
 
@@ -276,6 +310,7 @@ O CI do GitHub roda com Mongo e Redis reais e é um sinal **diferente**: verde l
 | `cd whatsapp-connector && npm test` | 26/26 (trava de sessão 7, motor 11, subida do processo 4, import de sessão 4) |
 | `node --test tests/delivery/sendPathsInventory.nodetest.mjs` | 6/6 (a ponte está no inventário de envios protegidos) |
 | `npx vitest run` nos 9 arquivos ligados ao WhatsApp | 82/82 |
+| `cd whatsapp-connector && NODE_PATH=<node_modules> node scripts/smoke-real-lib.mjs` | biblioteca whatsapp-web.js **real** (1.34.8 do npm) + Chrome real, sem WhatsApp (bloqueado na nuvem): abre Chrome com a sessão na pasta 0700, cada falha de init derruba a árvore e reinicia com espera, passa a `failed` no limite de reinícios, `stop` deixa **0** processos Chrome |
 
 O CI ganhou o job `conector-whatsapp` (`npm test` em `whatsapp-connector/`).
 
@@ -305,3 +340,95 @@ Pré-requisito: host para o conector (bloqueado, seção 2).
 3. Subir o conector no host novo, sem sessão; conferir `/v1/health`; colocar `WA_CONNECTOR_SECRET` na API e no worker.
 4. Janela fora do horário de atendimento: modo externo no worker → transferência (seção 10) → esperar `ready` → mensagem de teste.
 5. Monitorar 24 h: memória dos dois lados, `outbox-dead.jsonl` vazio, nenhum `unknown` novo, log `📣 ctwaContext recebido (conector)` nas conversas de anúncio.
+
+## 14. Matriz dos recursos usados pelo CRM (item 4 da rodada 2)
+
+Legenda das colunas:
+- **Simulador**: CRM real (ponte, cliente, recepção de eventos) falando HTTP assinado com o processo do conector usando o WhatsApp falso.
+- **Lib falsa**: motor `src/engine.js` real com uma imitação da API do whatsapp-web.js (sem Chrome).
+- **Lib real**: whatsapp-web.js de verdade + Chrome de verdade, **sem** WhatsApp (o site é bloqueado na nuvem).
+- **Sessão real**: número de WhatsApp de verdade. **Nada** foi testado nesta coluna.
+
+| Recurso usado pelo CRM | Simulador | Lib falsa | Lib real | Sessão real |
+|---|---|---|---|---|
+| Envio de texto da fila (lembretes etc.) | ✅ | ✅ | ❌ | ❌ |
+| Enquete de presença + texto alternativo | ✅ | ✅ | ❌ | ❌ |
+| Não duplicar envio (requestId, incerto, timeout, reinício no meio) | ✅ | ✅ (erro no meio = incerto) | ❌ | ❌ |
+| "Não saiu" provado (desconectado, número inválido, sem WhatsApp) | ✅ | ✅ | ❌ | ❌ |
+| QR no painel | ✅ (status) | ✅ (evento `qr` → imagem) | ❌ (site bloqueado) | ❌ |
+| `ready` / conectado | ✅ | ✅ | ❌ | ❌ |
+| Botão Reconectar | ✅ | ✅ | ❌ | ❌ |
+| Limpar sessão | ❌ | ❌ | ❌ | ❌ |
+| Abrir Chrome com sessão na pasta protegida | — | ✅ (opções do Client) | ✅ | ❌ |
+| Reinício após falha, espera, limite → `failed`, stop sem Chrome órfão | — | ✅ | ✅ | ❌ |
+| Init travado → watchdog | — | ✅ | ❌ (falhou antes, por rede) | ❌ |
+| `CONFLICT` → para, não retoma sozinho | — | ✅ | ❌ | ❌ |
+| Mensagem recebida → evento | ✅ | ✅ | ❌ | ❌ |
+| Origem do anúncio (ctwa) | ✅ (regra no CRM) | ✅ (normalização, miniatura removida) | ❌ | ❌ **bytes reais não vistos** |
+| @lid → telefone | ❌ (rota sem teste) | ✅ (na mensagem recebida) | ❌ | ❌ |
+| Mensagem da clínica (data da conversa) | ✅ | ✅ | ❌ | ❌ |
+| Votos de enquete (ao vivo) | ✅ | ✅ (`vote_update`) | ❌ | ❌ |
+| Votos de enquete (leitura posterior) | ❌ (rota sem teste) | ❌ | ❌ | ❌ |
+| Atividade da conversa / em lote | ✅ | ❌ | ❌ | ❌ |
+| Varredura profunda de convênio | ✅ (rota, padrões do CRM) | ❌ (código roda dentro da página) | ❌ | ❌ |
+| Catch-up depois de reinício | ✅ (regra no CRM) | ❌ | ❌ | ❌ |
+| Eventos: outbox, CRM fora do ar, deduplicação | ✅ | — | — | — |
+| Modo externo sem Chrome local, conector fora do ar | ✅ | — | — | — |
+| Trava de sessão, marcador, export/import com hash | ✅ (processo real, pastas reais) | — | — | — |
+| Memória do Chrome com WhatsApp | — | — | ❌ (só piso `about:blank`) | ❌ (só dado de produção do modo local) |
+
+O que tem ❌ nas três primeiras colunas depende do código que roda **dentro da página** do WhatsApp Web (leituras, varredura, catch-up). Esse código foi portado do `whatsappWebJsService` que já roda em produção, mas no conector **não foi executado** ainda.
+
+## 15. Onde está o projeto, versionamento e como reproduzir (item 6 da rodada 2)
+
+**Onde:**
+- Repositório `kaduart/fono-inova-crm-back`, branch `claude/whatsapp-connector-separado` (PR #85, rascunho), pasta `whatsapp-connector/`.
+- Não existe repositório próprio ainda. A pasta não importa nada de fora dela, então pode ser movida para um repo novo sem mudança de código (criar o repo é com o Kadu).
+
+**Versionamento:**
+- Código versionado pelos commits do repositório do CRM. `package.json` do conector: `fono-inova-whatsapp-connector` **1.0.0**.
+- `whatsapp-web.js` fixado no **commit** `58ddf15` do GitHub (o mesmo tarball do CRM), não numa faixa de versões.
+- **Ainda sem `package-lock.json`**: a nuvem bloqueia o tarball do GitHub. O primeiro `npm install` num ambiente com acesso gera o lockfile, que deve ser commitado; a partir daí usar `npm ci`.
+- Chrome fixado em **157.0.8103.38** (o mesmo de `config/chromeVersion.js`), indicado por `PUPPETEER_EXECUTABLE_PATH` ou `CHROME_PATH`.
+- O contrato (`src/contract.js`) é cópia do `services/whatsappConnector/contract.js` do CRM; um teste do CRM falha se os dois divergirem. O campo `v` dos eventos permite versões diferentes convivendo.
+
+**Validação reproduzível** (Node ≥20, Linux):
+
+Conector (não precisa de Chrome nem rede):
+```
+cd whatsapp-connector
+```
+```
+npm install
+```
+```
+npm test
+```
+Esperado: 26 testes passando. É o mesmo comando do job `Conector WhatsApp (node:test)` no CI.
+
+Conector com biblioteca e Chrome reais, sem sessão (precisa do Chrome fixado):
+```
+CHROME_PATH=/caminho/do/chrome node scripts/smoke-real-lib.mjs
+```
+Sem acesso ao WhatsApp, espera-se `failed` com 9 reinícios e 0 Chrome depois do stop. Com acesso, o status passa por `qr`; **não escaneie** (a pasta é temporária).
+
+Memória do conector:
+```
+CHROME_PATH=/caminho/do/chrome node --expose-gc scripts/measure-memory.mjs
+```
+
+CRM (na raiz do repositório):
+```
+npx vitest run tests/unit/whatsappConnector.test.js tests/unit/whatsappConnector.noChrome.test.js tests/unit/whatsappInboundProcessor.test.js tests/unit/whatsappSessionHandoff.test.js
+```
+```
+node --test tests/delivery/sendPathsInventory.nodetest.mjs
+```
+Baseline completo: comando da seção 12.1, uma vez no commit da main e outra no da branch, comparando os JSON.
+
+Ensaio manual sem sessão real:
+```
+cd whatsapp-connector && npm run simulator
+```
+
+Roteiro com número de teste (sessão real, **só com autorização**): `docs/WHATSAPP_CONECTOR_ROTEIRO_TESTE.md`.
