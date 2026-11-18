@@ -50,6 +50,16 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
       }
     }
 
+    // 18/11: anúncio (ctwa) chegou depois de um registro que já tinha anúncio mas não tinha o clid/link:
+    // completa SÓ os campos vazios do anúncio, sem trocar a origem (first-touch).
+    if (!created && parsed.method === 'ctwa') {
+      const fill = {};
+      for (const k of ['ctwaClid', 'adId', 'adSourceUrl', 'adTitle']) if (parsed[k]) fill[k] = parsed[k];
+      for (const [k, v] of Object.entries(fill)) {
+        await LeadAttribution.updateOne({ phone: normalized, [k]: { $in: [null, ''] } }, { $set: { [k]: v } });
+      }
+    }
+
     // Completa o Lead existente SEM sobrescrever origem já definida
     if (created) {
       const set = { 'metaTracking.source': toLeadTrackingSource(parsed.source) };
@@ -69,6 +79,8 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
     // (todas as variantes de formato). Antes só acontecia na criação e só se o lead não tivesse
     // origem, então nenhum lead de produção tinha gclid e o google-offline.csv saía vazio.
     if (parsed.gclid) await syncLeadGclid({ phone: normalized, gclid: parsed.gclid, campaign: parsed.campaign });
+    // 18/11: anúncio da Meta (com ou sem clid) → origem meta_ads, adId, link e clid no Lead do telefone.
+    if (parsed.method === 'ctwa') await syncLeadCtwa({ phone: normalized, ...parsed });
     return { ...parsed, created };
   } catch (err) {
     if (err?.code === 11000) return null; // corrida entre 2 mensagens do mesmo número — ok
@@ -103,6 +115,8 @@ export async function getAttributionByPhone(phone) {
       gclid: lead.metaTracking.gclid || null,
       fbclid: lead.metaTracking.fbclid || null,
       ttclid: lead.metaTracking.ttclid || null,
+      ctwaClid: lead.metaTracking.ctwaClid || null,
+      adId: lead.metaTracking.adId || null,
       leadId: lead._id,
       from: 'lead',
     };
@@ -158,6 +172,46 @@ export async function syncLeadGclid({ phone = null, leadId = null, gclid, campai
     return changed;
   } catch (err) {
     console.error(`${TAG} ❌ erro ao gravar gclid no lead:`, err.message);
+    return 0;
+  }
+}
+
+// Origens que um anúncio comprovado da Meta (ctwa) pode substituir no Lead: vazia, site, orgânico
+// e palavra-chave de rede social ("vim pelo Instagram" sem anúncio).
+const WEAK_FOR_META_AD = [null, '', 'website', 'organic', 'instagram', 'facebook'];
+
+/**
+ * Grava o anúncio click-to-WhatsApp no Lead do telefone (todas as variantes de formato):
+ * origem meta_ads (só sobre origem fraca), adId, link do anúncio e ctwa_clid (só campo vazio).
+ * Nunca troca origem paga de outra plataforma (google/tiktok). Idempotente. Nunca lança.
+ */
+export async function syncLeadCtwa({ phone = null, leadId = null, adId = null, ctwaClid = null, adSourceUrl = null }) {
+  try {
+    if (!adId && !ctwaClid && !adSourceUrl) return 0;
+    const or = [];
+    if (leadId) or.push({ _id: leadId });
+    const formats = phone ? leadPhoneFormats(phone) : [];
+    if (formats.length) or.push({ 'contact.phone': { $in: formats } });
+    if (!or.length) return 0;
+
+    const leads = await Lead.find({ $or: or }).select('_id metaTracking').lean();
+    let changed = 0;
+    for (const l of leads) {
+      const mt = l.metaTracking || {};
+      const set = {};
+      if (WEAK_FOR_META_AD.includes(mt.source ?? null)) set['metaTracking.source'] = 'meta_ads';
+      const sameAd = !mt.adId || !adId || String(mt.adId) === String(adId);
+      if (adId && !mt.adId) set['metaTracking.adId'] = adId;
+      if (sameAd && ctwaClid && !mt.ctwaClid) set['metaTracking.ctwaClid'] = ctwaClid;
+      if (sameAd && adSourceUrl && !mt.adSourceUrl) set['metaTracking.adSourceUrl'] = String(adSourceUrl).slice(0, 300);
+      if (!Object.keys(set).length) continue;
+      const r = await Lead.updateOne({ _id: l._id }, { $set: set });
+      changed += r.modifiedCount || 0;
+    }
+    if (changed) console.log(`${TAG} ✅ anúncio Meta gravado no lead`, { leads: changed, clid: !!ctwaClid });
+    return changed;
+  } catch (err) {
+    console.error(`${TAG} ❌ erro ao gravar anúncio no lead:`, err.message);
     return 0;
   }
 }
@@ -235,6 +289,8 @@ export async function getAttributionsByPhones(phones = []) {
         gclid: lead.metaTracking.gclid || null,
         fbclid: lead.metaTracking.fbclid || null,
         ttclid: lead.metaTracking.ttclid || null,
+        ctwaClid: lead.metaTracking.ctwaClid || null,
+        adId: lead.metaTracking.adId || null,
         leadId: lead._id,
         from: 'lead',
       });
@@ -245,4 +301,4 @@ export async function getAttributionsByPhones(phones = []) {
   return out;
 }
 
-export default { captureInboundAttribution, getAttributionByPhone, getAttributionsByPhones, syncLeadGclid, findGclidForConversion };
+export default { captureInboundAttribution, getAttributionByPhone, getAttributionsByPhones, syncLeadGclid, syncLeadCtwa, findGclidForConversion };

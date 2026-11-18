@@ -296,6 +296,8 @@ const leadSchema = new mongoose.Schema({
     adsetId: { type: String, default: null },         // ID do adset
     adId: { type: String, default: null },            // ID do anúncio específico
     fbclid: { type: String, default: null },          // Facebook Click ID
+    ctwaClid: { type: String, default: null },        // 18/11: clique do anúncio click-to-WhatsApp (ctwa_clid)
+    adSourceUrl: { type: String, default: null },     // 18/11: link do anúncio CTWA (ctwaContext.sourceUrl)
     gclid: { type: String, default: null },           // Google Click ID (antes era descartado: campo não existia no schema)
     ttclid: { type: String, default: null },          // TikTok Click ID
     specialty: {
