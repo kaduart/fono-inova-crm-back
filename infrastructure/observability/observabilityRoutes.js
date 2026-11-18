@@ -22,16 +22,17 @@ import { auth, authorize } from '../../middleware/auth.js';
 import { getQueue } from '../queue/queueConfig.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
 import { AppError } from '../../errors/AppError.js';
+import { staffOnly } from '../../middleware/observabilityAccess.js';
 
 const router = Router();
 
 // Health check geral
-router.get('/health', getHealthHandler);
+router.get('/health', ...staffOnly, getHealthHandler);
 
 // 🛡️ Health check do WhatsApp — 3 estados: healthy | warning | critical
 // NOTA: Em arquitetura separada (web + worker), NÃO verifica ENABLE_WORKERS no web.
 // Verifica se as filas estão sendo consumidas (workers ativos no crm-worker).
-router.get('/whatsapp-health', async (req, res) => {
+router.get('/whatsapp-health', ...staffOnly, async (req, res) => {
     // WhatsApp desabilitado intencionalmente → retorna healthy para não gerar falso positivo
     // Só ativa o health check quando explicitamente WHATSAPP_ENABLED=true
     if (process.env.WHATSAPP_ENABLED !== 'true') {
@@ -150,23 +151,23 @@ router.get('/whatsapp-health', async (req, res) => {
 });
 
 // Métricas gerais
-router.get('/metrics', getMetricsHandler);
+router.get('/metrics', ...staffOnly, getMetricsHandler);
 
 // Eventos recentes
-router.get('/recent', getRecentHandler);
+router.get('/recent', ...staffOnly, getRecentHandler);
 
 // Alertas
-router.get('/alerts', getAlertsHandler);
+router.get('/alerts', ...staffOnly, getAlertsHandler);
 
 // Domínios
-router.get('/domains', getAllDomainsHandler);
-router.get('/domain/:domain', getDomainHealthHandler);
+router.get('/domains', ...staffOnly, getAllDomainsHandler);
+router.get('/domain/:domain', ...staffOnly, getDomainHealthHandler);
 
 // System Health Dashboard
-router.get('/system-health', getSystemHealthHandler);
+router.get('/system-health', ...staffOnly, getSystemHealthHandler);
 
 // Fluxo por correlationId
-router.get('/flow/:correlationId', getFlowHandler);
+router.get('/flow/:correlationId', ...staffOnly, getFlowHandler);
 
 // Dead Letters - inspeção detalhada e retry
 // Leitura também exige admin: evento em dead letter pertence a fluxos com dado

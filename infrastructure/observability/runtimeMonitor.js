@@ -112,6 +112,12 @@ async function startQueueMonitor() {
 // HEALTH ENDPOINT HANDLER
 // ============================================
 
+/** Saúde em uma palavra, para o health check público (sem números internos). */
+export function healthStatusOk() {
+  const mem = lastMemory || getMemorySnapshot();
+  return mem.status !== 'critical';
+}
+
 export function healthEndpoint(req, res) {
   const mem = lastMemory || getMemorySnapshot();
 

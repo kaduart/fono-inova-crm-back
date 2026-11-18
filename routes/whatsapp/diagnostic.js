@@ -6,8 +6,13 @@ import Message from '../../models/Message.js';
 import Contacts from '../../models/Contacts.js';
 import { publishEvent, EventTypes } from '../../infrastructure/events/eventPublisher.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { adminOnly } from '../../middleware/observabilityAccess.js';
 
 const router = express.Router();
+
+// Admin apenas: lê webhooks brutos (telefone e texto de pacientes), injeta
+// mensagens falsas no fluxo do WhatsApp e apaga chaves do Redis.
+router.use(...adminOnly);
 
 /**
  * 🔍 GET /api/diagnostic/chat-status
