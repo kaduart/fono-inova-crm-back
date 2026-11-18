@@ -134,7 +134,15 @@ test('perda de posse: worker travado não conclui depois que outro retomou', { s
     const other = await claimEvent(id, 'workerNovo', { leaseMs: 5000, now: new Date(Date.now() + 10_000) });
     assert.equal(other.status, 'claimed', 'posse vencida deve ser retomável');
     otherToken = other.token;
-    await sleep(250); // dá tempo de a renovação perceber a perda
+    // Espera a renovação perceber a perda. O tique do keeper é de 250 ms, então
+    // um sleep fixo de 250 ms empatava com ele e falhava de vez em quando no CI.
+    // Aguarda o próprio aviso, com teto de 3 s (mais de 10 tiques).
+    if (!ctx.signal.aborted) {
+      await Promise.race([
+        new Promise((resolve) => ctx.signal.addEventListener('abort', resolve, { once: true })),
+        sleep(3000)
+      ]);
+    }
     signalAborted = ctx.signal.aborted;
     return 'efeito-ja-executado';
   }, 'workerVelho', { leaseMs: 300 });
