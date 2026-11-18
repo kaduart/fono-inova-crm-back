@@ -5,7 +5,7 @@
 # Depois compara contagem, conteúdo (sha256) e índices de cada coleção.
 #
 # Valida o PROCEDIMENTO. NÃO prova que o backup real de produção está bom
-# (ele falha por auth desde 02/11; ver docs/BACKUP_RESTAURACAO.md).
+# (ver docs/BACKUP_RESTAURACAO.md).
 #
 #   scripts/backup/validar-restauracao-ficticia.sh
 #   KEEP=1 scripts/backup/validar-restauracao-ficticia.sh   # mantém os contêineres

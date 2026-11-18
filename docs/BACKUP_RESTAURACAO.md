@@ -13,4 +13,4 @@ Resultado em 18/11/2026: as 5 coleções ficaram idênticas e os dois casos nega
 
 **O que isto prova:** que o procedimento (ferramentas, flags, cifra, restauração e conferência) funciona e detecta arquivo ruim.
 
-**O que isto NÃO prova:** que o backup real de produção está bom. O job noturno falha por autenticação desde 02/11. Enquanto ele não gerar um arquivo, não há backup real para restaurar. A conferência do backup real exige rodar este mesmo passo 5 sobre um arquivo real, num banco descartável, com autorização do Kadu.
+**O que isto NÃO prova:** que o backup real de produção está bom. O job noturno falhou por autenticação de 02/11 a 17/11 e voltou a rodar em 18/11 (run #31). A conferência do backup real exige restaurar um arquivo real num banco descartável e comparar contagens, com autorização do Kadu, porque o arquivo contém dados de pacientes.
