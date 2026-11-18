@@ -23,7 +23,7 @@ const MAX_LIST_LIMIT = 100;
 const SORTABLE_FIELDS = ['createdAt', 'eventType', 'aggregateType', 'attempts'];
 const MINIMAL_PROJECTION = {
     eventId: 1, eventType: 1, eventVersion: 1, aggregateType: 1, aggregateId: 1, sequenceNumber: 1,
-    status: 1, attempts: 1, createdAt: 1, processedAt: 1, processedBy: 1,
+    status: 1, attempts: 1, recoveryCount: 1, adminRetryCount: 1, createdAt: 1, updatedAt: 1, processedAt: 1, processedBy: 1,
     'error.message': 1, 'error.code': 1, 'metadata.correlationId': 1, 'metadata.source': 1
 };
 const MAX_ERROR_MESSAGE = 300;
