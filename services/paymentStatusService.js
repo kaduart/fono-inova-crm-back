@@ -542,6 +542,9 @@ export async function reconcilePatientBalanceDebit(payment, { mongoSession, user
 }
 
 async function nextFreeOutboxEventId(baseKey, mongoSession) {
+    // Sem conexão (testes unitários com outbox simulado) não há o que consultar:
+    // a consulta ficaria presa no buffer do Mongoose.
+    if (Outbox.db?.readyState !== 1) return baseKey;
     const ids = await Outbox.find({ eventId: { $regex: `^${baseKey}(_r\\d+)?$` } })
         .select('eventId').session(mongoSession || null).lean();
     if (!ids.length) return baseKey;
