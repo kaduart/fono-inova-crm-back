@@ -64,6 +64,7 @@ export async function listDeadLetters(options = {}) {
         aggregateId: e.aggregateId,
         status: e.status,
         attempts: e.attempts,
+        recoveryCount: e.recoveryCount ?? 0,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         processedAt: e.processedAt,
@@ -117,6 +118,7 @@ export async function getDeadLetterById(eventId) {
         sequenceNumber: event.sequenceNumber,
         status: event.status,
         attempts: event.attempts,
+        recoveryCount: event.recoveryCount ?? 0,
         createdAt: event.createdAt,
         updatedAt: event.updatedAt,
         processedAt: event.processedAt,
@@ -163,9 +165,11 @@ export async function retryDeadLetter(eventId, options = {}) {
         };
     }
 
-    // 1. Resetar evento no Event Store
-    await EventStore.updateOne(
-        { eventId },
+    // 1. Resetar evento no Event Store. Condicional a dead_letter: dois
+    // retries simultâneos não republicam duas vezes. A retomada manual zera
+    // o orçamento de recuperações e limpa qualquer resto de posse.
+    const reset = await EventStore.updateOne(
+        { eventId, status: 'dead_letter' },
         {
             $set: {
                 status: 'pending',
@@ -173,9 +177,15 @@ export async function retryDeadLetter(eventId, options = {}) {
                 error: null,
                 processedAt: null,
                 processedBy: null
-            }
+            },
+            $unset: { recoveryCount: '', processingToken: '', processingOwner: '', leaseExpiresAt: '' }
         }
     );
+    if (reset.matchedCount === 0) {
+        const error = new Error('Evento saiu de dead letter antes do retry (outro retry em andamento?)');
+        error.code = 'EVENT_NOT_FOUND';
+        throw error;
+    }
 
     // 2. Reconstruir jobData e republicar nas filas
     const jobData = {

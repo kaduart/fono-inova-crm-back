@@ -96,6 +96,14 @@ const eventStoreSchema = new mongoose.Schema({
   processedAt: Date,
   processedBy: String, // nome do worker que processou
   attempts: { type: Number, default: 0 },
+
+  // Posse da execução (infrastructure/events/eventOwnership.js). Presentes só
+  // enquanto status = 'processing' por uma execução com posse.
+  processingToken: String,   // id único da execução atual
+  processingOwner: String,   // nome do worker (diagnóstico)
+  processingStartedAt: Date, // início da execução atual
+  leaseExpiresAt: Date,      // prazo de posse, renovado durante a execução
+  recoveryCount: Number,     // vezes que o reaper retomou uma execução abandonada
   
   // Erro (se falhou)
   error: {

@@ -5,10 +5,16 @@
  * Quando um worker morre ou perde conexão, o evento pode ficar preso em 'processing'
  * indefinidamente. Este cron detecta e move esses eventos de volta para 'pending'
  * (para retry) ou 'failed' (se já tentou muitas vezes).
+ *
+ * Com a posse de execução (infrastructure/events/eventOwnership.js) o critério
+ * passa a ser o prazo de posse vencido; eventos sem posse registrada seguem o
+ * critério antigo (createdAt > 15 min). Escrita condicional ao estado e à posse.
+ * Ver docs/EVENTSTORE_OWNERSHIP.md.
  */
 
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
+import { sendAlert } from '../infrastructure/alerts/alertService.js';
 
 const log = createContextLogger(null, 'event_reaper');
 let isRunning = false;
@@ -17,20 +23,75 @@ let intervalId = null;
 const STUCK_THRESHOLD_MINUTES = 15;
 const MAX_ATTEMPTS_FOR_RETRY = 3;
 
-/**
- * Recupera eventos presos em processing
- */
-async function reapStuckEvents() {
-    const threshold = new Date(Date.now() - STUCK_THRESHOLD_MINUTES * 60 * 1000);
+// Limite e justificativa em infrastructure/events/eventOwnership.js (fonte única).
+import { MAX_RECOVERIES, legacyFenceFromEnv, legacyAbandonedFilter } from '../infrastructure/events/eventOwnership.js';
+export { MAX_RECOVERIES };
 
-    // Eventos em processing há mais de N minutos
-    const stuckEvents = await EventStore.find({
-        status: 'processing',
-        createdAt: { $lt: threshold }
-    }).sort({ createdAt: 1 }).limit(100).lean();
+const LEGACY_MESSAGE = `Auto-recovered from stuck processing after ${STUCK_THRESHOLD_MINUTES}min`;
+const LEASE_MESSAGE = 'Auto-recovered: processing lease expired';
+const EXHAUSTED_MESSAGE = `Recovery limit reached (${MAX_RECOVERIES}); moved to dead_letter`;
+
+/**
+ * Elegível: em 'processing' e
+ *  - com posse (leaseExpiresAt) vencida, ou
+ *  - sem posse registrada (reivindicado por código antigo): só depois da cerca
+ *    EVENT_LEGACY_FENCE_AT e com createdAt > 15 min (ver eventOwnership.js).
+ *    Sem cerca, nunca: a execução antiga pode estar rodando.
+ */
+export function stuckFilter(now, legacyFence = legacyFenceFromEnv()) {
+  const legacy = legacyAbandonedFilter(now, legacyFence);
+  return {
+    status: 'processing',
+    $or: legacy ? [{ leaseExpiresAt: { $lte: now } }, legacy] : [{ leaseExpiresAt: { $lte: now } }]
+  };
+}
+
+/** Eventos sem posse que esperam a cerca (só contagem, para aviso). */
+export function legacyAwaitingFilter() {
+  return { status: 'processing', processingToken: null, leaseExpiresAt: null };
+}
+
+/**
+ * Condição exata sobre o valor observado: ausente → $exists:false;
+ * null → $type:'null' (null sozinho também casaria ausente); senão $eq bruto.
+ */
+export function observed(event, field) {
+  if (!(field in event) || event[field] === undefined) return { $exists: false };
+  if (event[field] === null) return { $type: 'null' };
+  return { $eq: event[field] };
+}
+
+/** Decisão para um evento observado. */
+export function decide(event, maxRecoveries = MAX_RECOVERIES) {
+  const recoveries = (Number(event.recoveryCount) || 0) + 1;
+  if (recoveries >= maxRecoveries) return { to: 'dead_letter', recoveries, message: EXHAUSTED_MESSAGE, exhausted: true };
+  const shouldRetry = event.attempts < MAX_ATTEMPTS_FOR_RETRY; // comparação JS preservada do legado
+  return {
+    to: shouldRetry ? 'pending' : 'failed',
+    recoveries,
+    message: event.leaseExpiresAt ? LEASE_MESSAGE : LEGACY_MESSAGE,
+    exhausted: false
+  };
+}
+
+/**
+ * Recupera eventos presos em processing. Cada escrita é condicional ao estado
+ * e à posse observados: se o worker concluir, falhar ou renovar a posse entre
+ * a leitura e a escrita, nada é sobrescrito.
+ */
+export async function reapStuckEvents({ now = new Date(), alert = sendAlert, maxRecoveries = MAX_RECOVERIES, batchSize = 100, legacyFence = legacyFenceFromEnv() } = {}) {
+    const legacyActive = !!legacyAbandonedFilter(now, legacyFence);
+    const legacyAwaiting = legacyActive ? 0 : await EventStore.countDocuments(legacyAwaitingFilter());
+    if (legacyAwaiting > 0) {
+        log.warn('reaper_legacy_awaiting_fence', `${legacyAwaiting} evento(s) em processing sem posse (código antigo) aguardando EVENT_LEGACY_FENCE_AT; não são retomados`, { legacyAwaiting });
+    }
+    const stuckEvents = await EventStore.find(stuckFilter(now, legacyFence), {
+        eventId: 1, eventType: 1, status: 1, attempts: 1, createdAt: 1,
+        processingToken: 1, leaseExpiresAt: 1, recoveryCount: 1
+    }).sort({ createdAt: 1 }).limit(batchSize).lean();
 
     if (stuckEvents.length === 0) {
-        return { reset: 0, failed: 0, total: 0 };
+        return { reset: 0, failed: 0, deadLetter: 0, lostRace: 0, total: 0, legacyAwaiting };
     }
 
     log.warn('reaper_start', `Encontrados ${stuckEvents.length} evento(s) travados em processing`, {
@@ -39,50 +100,55 @@ async function reapStuckEvents() {
 
     let resetCount = 0;
     let failCount = 0;
+    let deadCount = 0;
+    let lostRace = 0;
     const details = [];
 
     for (const event of stuckEvents) {
         try {
-            const shouldRetry = event.attempts < MAX_ATTEMPTS_FOR_RETRY;
-            const newStatus = shouldRetry ? 'pending' : 'failed';
+            const d = decide(event, maxRecoveries);
+            const filter = {
+                eventId: event.eventId,
+                status: 'processing',
+                processingToken: observed(event, 'processingToken'),
+                leaseExpiresAt: observed(event, 'leaseExpiresAt'),
+                recoveryCount: observed(event, 'recoveryCount')
+            };
+            // Driver direto (sem cast do Mongoose): o filtro compara o valor
+            // bruto observado, inclusive tipos inesperados gravados por código antigo.
+            const r = await EventStore.collection.updateOne(filter, {
+                $set: { status: d.to, recoveryCount: d.recoveries, error: { message: d.message, code: d.exhausted ? 'RECOVERY_LIMIT_EXCEEDED' : 'RECOVERED_STUCK_PROCESSING' } },
+                $unset: { processingToken: '', processingOwner: '', leaseExpiresAt: '' }
+            });
 
-            await EventStore.updateOne(
-                { eventId: event.eventId },
-                {
-                    $set: {
-                        status: newStatus,
-                        error: {
-                            message: `Auto-recovered from stuck processing after ${STUCK_THRESHOLD_MINUTES}min`,
-                            recoveredAt: new Date(),
-                            recoveredBy: 'eventReaper'
-                        }
-                    }
-                }
-            );
+            if (r.matchedCount === 0) {
+                lostRace++;
+                log.info('reaper_lost_race', `Evento ${event.eventId} mudou antes da recuperação; nada gravado`, { eventId: event.eventId });
+                details.push({ eventId: event.eventId, success: true, from: 'processing', to: null, lostRace: true });
+                continue;
+            }
 
-            if (shouldRetry) {
-                resetCount++;
-                log.info('reaper_reset', `Evento ${event.eventId} resetado para pending`, {
-                    eventId: event.eventId,
-                    eventType: event.eventType,
-                    attempts: event.attempts
+            if (d.to === 'pending') resetCount++;
+            else if (d.to === 'failed') failCount++;
+            else deadCount++;
+
+            if (d.exhausted) {
+                log.error('reaper_dead_letter', `Evento ${event.eventId} atingiu ${maxRecoveries} recuperações → dead_letter`, {
+                    eventId: event.eventId, eventType: event.eventType, recoveries: d.recoveries
                 });
+                await Promise.resolve(alert({
+                    level: 'critical',
+                    type: 'event_recovery_limit',
+                    message: `Evento ${event.eventType} (${event.eventId}) abandonado ${d.recoveries} vezes; movido para dead_letter`,
+                    details: { eventId: event.eventId, eventType: event.eventType, recoveries: d.recoveries }
+                })).catch(e => log.error('reaper_alert_error', e.message, { eventId: event.eventId }));
             } else {
-                failCount++;
-                log.warn('reaper_failed', `Evento ${event.eventId} movido para failed (muitas tentativas)`, {
-                    eventId: event.eventId,
-                    eventType: event.eventType,
-                    attempts: event.attempts
+                log.info('reaper_recovered', `Evento ${event.eventId} → ${d.to}`, {
+                    eventId: event.eventId, eventType: event.eventType, attempts: event.attempts, recoveries: d.recoveries
                 });
             }
 
-            details.push({
-                eventId: event.eventId,
-                success: true,
-                from: 'processing',
-                to: newStatus,
-                attempts: event.attempts
-            });
+            details.push({ eventId: event.eventId, success: true, from: 'processing', to: d.to, attempts: event.attempts, recoveries: d.recoveries });
         } catch (error) {
             log.error('reaper_error', `Erro ao recuperar evento ${event.eventId}`, {
                 error: error.message
@@ -95,7 +161,7 @@ async function reapStuckEvents() {
         }
     }
 
-    return { reset: resetCount, failed: failCount, total: stuckEvents.length, details };
+    return { reset: resetCount, failed: failCount, deadLetter: deadCount, lostRace, total: stuckEvents.length, legacyAwaiting, details };
 }
 
 async function runOnce() {
@@ -112,7 +178,7 @@ async function runOnce() {
         const result = await reapStuckEvents();
 
         if (result.total > 0) {
-            console.log(`[EventReaper] ✅ ${result.reset} resetados | ❌ ${result.failed} falhados | Total: ${result.total} em ${Date.now() - startedAt}ms`);
+            console.log(`[EventReaper] ✅ ${result.reset} resetados | ❌ ${result.failed} falhados | ☠️ ${result.deadLetter} dead_letter | ↩️ ${result.lostRace} sem efeito | Total: ${result.total} em ${Date.now() - startedAt}ms`);
         } else {
             console.log(`[EventReaper] ✅ nada a reaper em ${Date.now() - startedAt}ms`);
         }

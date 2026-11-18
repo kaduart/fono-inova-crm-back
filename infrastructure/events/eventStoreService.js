@@ -20,6 +20,23 @@ import EventStore from '../../models/EventStore.js';
 import { createContextLogger } from '../../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { classifyError } from './errorClassifier.js';
+import {
+  claimEvent,
+  completeOwned,
+  failOwned,
+  deadLetterOwned,
+  startLeaseKeeper,
+  leaseMsFromEnv,
+  notLiveOwnedFilter,
+  EventBusyError
+} from './eventOwnership.js';
+
+/**
+ * Falhas registradas antes de ir para dead_letter. Mantém o valor que já
+ * existia aqui (5), que coincide com o attempts: 5 padrão das filas BullMQ
+ * (infrastructure/queue/queueConfig.js): depois disso o BullMQ não reentrega.
+ */
+export const MAX_FAILED_ATTEMPTS = 5;
 
 const log = createContextLogger(null, 'event_store');
 
@@ -134,20 +151,32 @@ export async function getPendingEvents(options = {}) {
  */
 export async function markEventProcessed(eventId, workerName) {
   try {
-    const event = await EventStore.findOne({ eventId });
-    if (!event) {
-      log.warn('mark_processed_not_found', 'Evento não encontrado', { eventId });
+    // Escrita legada (sem token): não pode passar por cima de uma execução
+    // com posse viva de outro worker.
+    const now = new Date();
+    const r = await EventStore.updateOne(
+      { eventId, ...notLiveOwnedFilter(now) },
+      {
+        $set: { status: 'processed', processedAt: now, processedBy: workerName },
+        $unset: { processingToken: '', processingOwner: '', leaseExpiresAt: '' }
+      }
+    );
+    if (r.matchedCount === 0) {
+      const exists = await EventStore.exists({ eventId });
+      if (!exists) {
+        log.warn('mark_processed_not_found', 'Evento não encontrado', { eventId });
+      } else {
+        log.warn('mark_processed_owned_by_other', 'Evento com posse viva de outra execução; conclusão sem token ignorada', { eventId, workerName });
+      }
       return null;
     }
 
-    await event.markProcessed(workerName);
-    
     log.debug('event_processed', 'Evento marcado como processado', {
       eventId,
       workerName
     });
 
-    return event.toObject();
+    return EventStore.findOne({ eventId }).lean();
   } catch (error) {
     log.error('mark_processed_error', 'Erro ao marcar evento', {
       error: error.message,
@@ -158,25 +187,32 @@ export async function markEventProcessed(eventId, workerName) {
 }
 
 /**
- * Marca evento como falhou
+ * Marca evento como falhou (escrita legada, sem token)
  */
 export async function markEventFailed(eventId, error) {
   try {
-    const event = await EventStore.findOne({ eventId });
-    if (!event) {
-      log.warn('mark_failed_not_found', 'Evento não encontrado', { eventId });
+    const now = new Date();
+    const updated = await EventStore.findOneAndUpdate(
+      { eventId, ...notLiveOwnedFilter(now) },
+      {
+        $inc: { attempts: 1 },
+        $set: { status: 'failed', error: { message: error.message, stack: error.stack, code: error.code } },
+        $unset: { processingToken: '', processingOwner: '', leaseExpiresAt: '' }
+      },
+      { new: true }
+    ).lean();
+    if (!updated) {
+      log.warn('mark_failed_not_applied', 'Evento não encontrado ou com posse viva de outra execução', { eventId });
       return null;
     }
 
-    await event.markFailed(error);
-    
     log.debug('event_failed', 'Evento marcado como falhou', {
       eventId,
-      attempts: event.attempts,
+      attempts: updated.attempts,
       error: error.message
     });
 
-    return event.toObject();
+    return updated;
   } catch (err) {
     log.error('mark_failed_error', 'Erro ao marcar evento como falhou', {
       error: err.message,
@@ -187,21 +223,27 @@ export async function markEventFailed(eventId, error) {
 }
 
 /**
- * Marca evento como dead letter
+ * Marca evento como dead letter (escrita legada, sem token)
  */
 export async function markEventDeadLetter(eventId, error) {
   try {
-    const event = await EventStore.findOne({ eventId });
-    if (!event) return null;
+    const now = new Date();
+    const updated = await EventStore.findOneAndUpdate(
+      { eventId, ...notLiveOwnedFilter(now) },
+      {
+        $set: { status: 'dead_letter', error: { message: error.message, stack: error.stack, code: error.code } },
+        $unset: { processingToken: '', processingOwner: '', leaseExpiresAt: '' }
+      },
+      { new: true }
+    ).lean();
+    if (!updated) return null;
 
-    await event.markDeadLetter(error);
-    
     log.warn('event_dead_letter', 'Evento movido para dead letter', {
       eventId,
       error: error.message
     });
 
-    return event.toObject();
+    return updated;
   } catch (err) {
     log.error('mark_dlq_error', 'Erro ao mover para DLQ', {
       error: err.message,
@@ -406,57 +448,115 @@ export async function cleanupOldEvents(olderThanDays = 365) {
  * @param {Function} processor - Função de processamento
  * @param {string} workerName - Nome do worker
  */
-export async function processWithGuarantees(event, processor, workerName) {
-  const { eventId } = event;
+export async function processWithGuarantees(event, processor, workerName, options = {}) {
+  // D-1: aceita a string do eventId (contrato antigo do insuranceOrchestratorWorker).
+  if (typeof event === 'string') event = { eventId: event };
+  const eventId = event?.eventId;
+  if (typeof eventId !== 'string' || eventId === '') {
+    // Exclusão explícita e segura: sem eventId não há registro a reivindicar
+    // nem a marcar. Nenhuma escrita no Event Store (antes, a escrita com
+    // eventId undefined virava filtro {eventId: null}).
+    log.warn('event_without_id', 'Execução sem eventId: processada sem posse e sem registro no Event Store', { workerName });
+    const result = await processor(event, { signal: undefined, token: undefined, eventId: undefined });
+    return { success: true, result, ownership: 'none' };
+  }
+  const leaseMs = options.leaseMs ?? leaseMsFromEnv();
+  const owner = workerName || 'unknown';
 
+  const claim = await claimEvent(eventId, owner, { leaseMs });
+
+  if (claim.status === 'already_processed') {
+    log.info('event_already_processed', 'Evento já processado; execução ignorada', { eventId, workerName });
+    return { success: true, skipped: true, reason: 'already_processed' };
+  }
+  if (claim.status === 'dead_letter') {
+    log.warn('event_in_dead_letter', 'Evento em dead_letter; execução ignorada', { eventId, workerName });
+    return { success: false, skipped: true, reason: 'dead_letter' };
+  }
+  if (claim.status === 'busy') {
+    // Outra execução tem posse viva. Erro retentável: o BullMQ tenta de novo
+    // com backoff, e a posse abandonada vence em leaseMs.
+    log.warn('event_busy', 'Evento em execução por outro worker; nova tentativa depois', { eventId, workerName });
+    throw new EventBusyError(eventId);
+  }
+
+  if (claim.status !== 'claimed') {
+    // not_found / not_claimable: o evento não está no Event Store com estado
+    // reivindicável. Mantém o caminho legado (sem posse) para não mudar o
+    // comportamento de quem usa idempotencyKeys que não são eventos gravados.
+    log.warn('event_ownership_unavailable', 'Execução sem posse (evento fora do Event Store ou em estado não reivindicável)', { eventId, workerName, claim: claim.status });
+    return processWithoutOwnership(event, processor, workerName);
+  }
+
+  const { token } = claim;
+  const keeper = startLeaseKeeper(eventId, token, {
+    leaseMs,
+    onLost: (err) => log.warn('event_ownership_lost', err.message, { eventId, workerName, stage: 'renew' }),
+    onError: (err) => log.warn('event_lease_renew_error', 'Falha ao renovar posse; nova tentativa no próximo tique', { eventId, error: err.message })
+  });
+
+  let result;
   try {
-    // Marca como processing
-    await EventStore.updateOne(
-      { eventId },
-      { $set: { status: 'processing' } }
-    );
-
-    // Executa processamento
-    const result = await processor(event);
-
-    // Marca como processed
-    await markEventProcessed(eventId, workerName);
-
-    return { success: true, result };
-
+    result = await processor(event, { signal: keeper.signal, token, eventId });
   } catch (error) {
+    keeper.stop();
     const classification = classifyError(error);
 
     if (!classification.retryable) {
-      // Erro permanente: vai direto para dead letter sem retry
-      await markEventDeadLetter(eventId, error);
-      log.warn('event_permanent_failure', 'Erro permanente detectado, movido para dead letter', {
-        eventId,
-        error: error.message,
-        code: error.code
-      });
+      const moved = await deadLetterOwned(eventId, token, error);
+      if (!moved) {
+        log.warn('event_ownership_lost', 'Posse perdida; dead letter não gravado', { eventId, workerName, stage: 'dead_letter' });
+      } else {
+        log.warn('event_permanent_failure', 'Erro permanente detectado, movido para dead letter', {
+          eventId,
+          error: error.message,
+          code: error.code
+        });
+      }
       throw error;
     }
 
-    // Incrementa tentativas
-    await EventStore.updateOne(
-      { eventId },
-      { 
-        $inc: { attempts: 1 },
-        $set: { 
-          status: 'failed',
-          'error.message': error.message,
-          'error.stack': error.stack
-        }
-      }
-    );
+    const updated = await failOwned(eventId, token, error);
+    if (!updated) {
+      log.warn('event_ownership_lost', 'Posse perdida; falha não gravada', { eventId, workerName, stage: 'fail' });
+    } else if (updated.attempts >= MAX_FAILED_ATTEMPTS) {
+      // Condicional: só promove se ninguém retomou o evento nesse meio tempo.
+      await EventStore.updateOne(
+        { eventId, status: 'failed', attempts: { $gte: MAX_FAILED_ATTEMPTS }, processingToken: { $exists: false } },
+        { $set: { status: 'dead_letter', error: { message: error.message, stack: error.stack, code: error.code } } }
+      );
+    }
+    throw error;
+  }
 
-    // Se tentou muitas vezes, move para DLQ
-    const updated = await EventStore.findOne({ eventId });
-    if (updated.attempts >= 5) {
+  keeper.stop();
+  const completed = await completeOwned(eventId, token, workerName);
+  if (!completed) {
+    // O processador terminou, mas a posse já não era desta execução. Não
+    // lança erro: relançar faria o BullMQ repetir efeitos já executados.
+    log.warn('event_ownership_lost', 'Posse perdida; conclusão não gravada', { eventId, workerName, stage: 'complete' });
+    return { success: false, ownershipLost: true, result };
+  }
+  return { success: true, result };
+}
+
+/** Caminho legado, idêntico ao anterior, para eventos sem posse possível. */
+async function processWithoutOwnership(event, processor, workerName) {
+  const { eventId } = event;
+  try {
+    const result = await processor(event, { signal: undefined, token: undefined, eventId });
+    await markEventProcessed(eventId, workerName);
+    return { success: true, result };
+  } catch (error) {
+    const classification = classifyError(error);
+    if (!classification.retryable) {
+      await markEventDeadLetter(eventId, error);
+      throw error;
+    }
+    const updated = await markEventFailed(eventId, error);
+    if (updated && updated.attempts >= MAX_FAILED_ATTEMPTS) {
       await markEventDeadLetter(eventId, error);
     }
-
     throw error;
   }
 }
