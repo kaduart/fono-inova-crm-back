@@ -74,6 +74,26 @@ function findClid(v, depth = 0) {
   return null;
 }
 
+const TOKEN_RE = /^[A-Za-z0-9_\-.]{20,512}$/;
+
+// conversionData cujo conteúdo INTEIRO é um código (bytes, ou base64 desses bytes vindo da página).
+function conversionDataToken(v) {
+  if (v == null) return null;
+  let buf = asBytes(v);
+  if (!buf && typeof v === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(v) && v.length >= 16) {
+    try { buf = Buffer.from(v, 'base64'); } catch { buf = null; }
+  }
+  if (!buf) return null;
+  const t = buf.toString('latin1').trim();
+  return TOKEN_RE.test(t) ? t : null;
+}
+
+/** Resumo do clid para log, sem o valor: tamanho e se começa como os clids da Meta ("AR"). */
+export function clidLogInfo(clid) {
+  if (!clid) return null;
+  return `${clid.length}, AR=${clid.startsWith('AR') ? 'sim' : 'não'}`;
+}
+
 /**
  * Extrai os dados do anúncio. `raw` = msg._data.ctwaContext; `msgData` = msg._data (opcional).
  * Devolve null quando não há anúncio. `clidFrom` diz onde o clid foi achado (para o log).
@@ -97,6 +117,12 @@ export function extractCtwa(raw, msgData = null) {
     if (val == null) continue;
     const found = typeof val === 'string' && CLID_RE.test(val) && where.endsWith('ctwaClid') ? val : findClid(val);
     if (found) { ctwaClid = found; clidFrom = where; break; }
+  }
+  // 18/11 (log em prod após o #81): conversionData chega com ~451 bytes que são, inteiros, um único
+  // código opaco (sem rótulo "ctwa_clid="). É o identificador do clique: usa como clid.
+  if (!ctwaClid) {
+    const token = conversionDataToken(r.conversionData);
+    if (token) { ctwaClid = token; clidFrom = 'conversionData(código)'; }
   }
 
   const sourceId = r.sourceId ?? ext?.sourceId ?? null;
@@ -150,4 +176,4 @@ export function describeCtwaShape(raw, depth = 0, key = null) {
   return typeof raw;
 }
 
-export default { extractCtwa, describeCtwaShape };
+export default { extractCtwa, describeCtwaShape, clidLogInfo };

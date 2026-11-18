@@ -941,6 +941,18 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
   try {
     const rows = await client.pupPage.evaluate((since) => {
       const out = [];
+      // Bytes (conversionData) se perdem na passagem página → Node: leva em base64.
+      const toB64 = (v) => {
+        if (v == null || typeof v === 'string') return v ?? null;
+        let u8 = null;
+        if (v instanceof Uint8Array) u8 = v;
+        else if (v instanceof ArrayBuffer) u8 = new Uint8Array(v);
+        else if (ArrayBuffer.isView(v)) u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+        if (!u8 || !u8.length) return null;
+        let bin = '';
+        for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+        return btoa(bin);
+      };
       const chats = ((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })()).Chat?.getModelsArray?.() || [];
       for (const c of chats) {
         if (c.isGroup || (c.t || 0) < since) continue;
@@ -957,7 +969,7 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
             body: m.body || '',
             ctwa: ctx ? {
               sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, title: ctx.title || null,
-              ctwaClid: ctx.ctwaClid || null, ctwaSignals: ctx.ctwaSignals ?? null, conversionData: ctx.conversionData ?? null,
+              ctwaClid: ctx.ctwaClid || null, ctwaSignals: toB64(ctx.ctwaSignals), conversionData: toB64(ctx.conversionData),
             } : null,
           });
         }
@@ -1075,14 +1087,14 @@ async function handleInboundAttribution(msg) {
   // Checagem barata antes de qualquer I/O
   const { parseAttribution } = await import('../utils/attributionParser.js');
   // 18/11: o ctwa_clid não vem numa chave "ctwaClid"; extractCtwa procura em ctwaSignals/conversionData/externalAdReply.
-  const { extractCtwa } = await import('../utils/ctwaContext.js');
+  const { extractCtwa, clidLogInfo } = await import('../utils/ctwaContext.js');
   // 18/11 (log em prod): conversionData chega como {} — é binário e se perde na passagem página → Node.
   // Lê os bytes DENTRO da página e traz em base64 (só quando há anúncio).
   const ctwaFull = ctwaRaw ? { ...ctwaRaw, ...(await readCtwaBytesInPage(msg)) } : null;
   const ctwa = extractCtwa(ctwaFull, msg._data);
   if (ctwaRaw) {
     console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','),
-      `| anúncio=${ctwa?.sourceId ? 'sim' : 'não'} clid=${ctwa?.ctwaClid ? `sim (${ctwa.clidFrom})` : 'não'}`);
+      `| anúncio=${ctwa?.sourceId ? 'sim' : 'não'} clid=${ctwa?.ctwaClid ? `sim (${ctwa.clidFrom}; ${clidLogInfo(ctwa.ctwaClid)})` : 'não'}`);
     logCtwaShapeOnce(ctwaFull, msg._data);
   }
   if (!parseAttribution(text, ctwa)) return;

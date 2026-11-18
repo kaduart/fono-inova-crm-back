@@ -3,7 +3,7 @@
  * ctwaSignals / conversionData / externalAdReply. Antes o clid nunca era salvo.
  */
 import { describe, it, expect } from 'vitest';
-import { extractCtwa, describeCtwaShape } from '../../utils/ctwaContext.js';
+import { extractCtwa, describeCtwaShape, clidLogInfo } from '../../utils/ctwaContext.js';
 
 const CLID = 'ARAkLkA8rmlFeiCktEJQ-QTwRmyU9y4';
 const bytesObj = (str) => Object.fromEntries([...Buffer.from(str, 'utf8')].map((b, i) => [String(i), b]));
@@ -70,5 +70,32 @@ describe('describeCtwaShape com bytes lidos na página (base64)', () => {
     const shape = describeCtwaShape({ conversionData: proto.toString('base64'), ctwaSignals: 'abc' });
     expect(JSON.stringify(shape)).not.toContain(CLID2);
     expect(shape.conversionData).toEqual({ base64: { bytes: proto.length, textos: [`id(${CLID2.length})`] } });
+  });
+});
+
+// 18/11 (log em prod após o #81): conversionData = 451 bytes que são, inteiros, um código sem rótulo.
+describe('conversionData como código único', () => {
+  const TOKEN = 'AR' + 'aB3_-x9'.repeat(70).slice(0, 449);
+
+  it('base64 vindo da página → clid = o código decodificado', () => {
+    const r = extractCtwa({ sourceId: '120', conversionData: Buffer.from(TOKEN).toString('base64'), ctwaSignals: 'abcdefg' });
+    expect(r.ctwaClid).toBe(TOKEN);
+    expect(r.clidFrom).toBe('conversionData(código)');
+    expect(clidLogInfo(r.ctwaClid)).toBe('451, AR=sim');
+  });
+
+  it('bytes serializados → mesmo resultado', () => {
+    expect(extractCtwa({ sourceId: '120', conversionData: bytesObj(TOKEN) }).ctwaClid).toBe(TOKEN);
+  });
+
+  it('rótulo explícito continua tendo prioridade', () => {
+    const r = extractCtwa({ sourceId: '120', ctwaClid: CLID, conversionData: Buffer.from(TOKEN).toString('base64') });
+    expect(r.ctwaClid).toBe(CLID);
+  });
+
+  it('binário não textual ou curto não vira clid', () => {
+    expect(extractCtwa({ sourceId: '120', conversionData: Buffer.from([0, 1, 2, 200, 15, 99, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]).toString('base64') }).ctwaClid).toBeNull();
+    expect(extractCtwa({ sourceId: '120', conversionData: Buffer.from('curto').toString('base64') }).ctwaClid).toBeNull();
+    expect(clidLogInfo(null)).toBeNull();
   });
 });
