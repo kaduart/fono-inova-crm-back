@@ -10,7 +10,7 @@ import mongoose from 'mongoose';
 
 import EventStore from '../../models/EventStore.js';
 import {
-  claimEvent, completeOwned, failOwned, renewLease, leaseMsFromEnv, DEFAULT_LEASE_MS
+  claimEvent, completeOwned, failOwned, renewLease, leaseMsFromEnv, DEFAULT_LEASE_MS, legacyFenceFromEnv
 } from '../../infrastructure/events/eventOwnership.js';
 import {
   processWithGuarantees, markEventProcessed, MAX_FAILED_ATTEMPTS
@@ -217,7 +217,7 @@ test('filtro condicional usa o valor bruto observado (ausente, null, tipo inespe
   // recoveryCount gravado como texto por código antigo: o cast do Mongoose
   // faria o filtro nunca casar e o evento ficaria em processing para sempre.
   const id = await seed({ status: 'processing', recoveryCount: '1', processingToken: null, createdAt: new Date(Date.now() - 20 * 60 * 1000) });
-  const r = await reapStuckEvents({ alert: async () => {} });
+  const r = await reapStuckEvents({ alert: async () => {}, legacyFence: new Date(Date.now() - 1000) });
   assert.equal(r.lostRace, 0);
   assert.equal(r.reset, 1);
   const doc = await get(id);
@@ -308,18 +308,43 @@ test('escrita legada sem token não passa por cima de posse viva', { skip }, asy
   assert.equal((await markEventProcessed(id2, 'legado')).status, 'processed');
 });
 
-test('evento processing antigo sem posse (código anterior): critério legado de 15 min', { skip }, async () => {
+test('sem a cerca, evento processing sem posse (código antigo) nunca é liberado', { skip }, async () => {
+  const old = await seed({ status: 'processing', attempts: 1, createdAt: new Date(Date.now() - 3 * 60 * 60_000) });
+  const r = await reapStuckEvents({ legacyFence: null });
+  assert.equal(r.total, 0);
+  assert.equal(r.legacyAwaiting, 1, 'contado e avisado');
+  assert.equal((await claimEvent(old, 'w', { legacyFence: null })).status, 'busy', 'worker novo trata como execução viva');
+  assert.equal((await get(old)).status, 'processing');
+  // cerca no futuro (deploy ainda não declarado concluído): idem
+  const future = new Date(Date.now() + 60_000);
+  assert.equal((await reapStuckEvents({ legacyFence: future })).total, 0);
+  assert.equal((await claimEvent(old, 'w', { legacyFence: future })).status, 'busy');
+});
+
+test('com a cerca vencida: critério legado de 15 min para eventos sem posse', { skip }, async () => {
+  const fence = new Date(Date.now() - 1000);
   const old = await seed({ status: 'processing', attempts: 1, createdAt: new Date(Date.now() - 20 * 60_000) });
   const young = await seed({ status: 'processing', attempts: 1, createdAt: new Date(Date.now() - 60_000) });
-  const r = await reapStuckEvents();
-  assert.equal(r.reset, 1);
+  const nullOwner = await seed({ status: 'processing', attempts: 1, processingToken: null, leaseExpiresAt: null, createdAt: new Date(Date.now() - 20 * 60_000) });
+  const r = await reapStuckEvents({ legacyFence: fence });
+  assert.equal(r.reset, 2);
   const d = await get(old);
   assert.equal(d.status, 'pending');
   assert.equal(d.error.message, 'Auto-recovered from stuck processing after 15min');
+  assert.equal((await get(nullOwner)).status, 'pending', 'null conta como sem posse');
   assert.equal((await get(young)).status, 'processing');
-  // e um worker novo também pode retomar o antigo sem posse
+  // e um worker novo também pode retomar o antigo sem posse (conta recuperação)
   const o2 = await seed({ status: 'processing', createdAt: new Date(Date.now() - 20 * 60_000) });
-  assert.equal((await claimEvent(o2, 'w')).status, 'claimed');
+  const c = await claimEvent(o2, 'w', { legacyFence: fence });
+  assert.equal(c.status, 'claimed');
+  assert.equal(c.recoveryCount, 1);
+});
+
+test('EVENT_LEGACY_FENCE_AT: ausente = sem cerca; inválida falha claramente', () => {
+  assert.equal(legacyFenceFromEnv({}), null);
+  assert.equal(legacyFenceFromEnv({ EVENT_LEGACY_FENCE_AT: '2026-11-20T03:00:00Z' }).toISOString(), '2026-11-20T03:00:00.000Z');
+  assert.throws(() => legacyFenceFromEnv({ EVENT_LEGACY_FENCE_AT: 'amanhã' }), /EVENT_LEGACY_FENCE_AT inválido/);
+  assert.throws(() => legacyFenceFromEnv({ EVENT_LEGACY_FENCE_AT: '1700000000' }), /EVENT_LEGACY_FENCE_AT inválido/);
 });
 
 test('evento fora do Event Store: caminho legado sem posse, sem quebrar', { skip }, async () => {

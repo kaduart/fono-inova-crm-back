@@ -45,10 +45,37 @@ export const EXHAUSTED_MESSAGE = `Recovery limit reached (${MAX_RECOVERIES}); mo
 export const DEFAULT_LEASE_MS = 60_000;
 
 /**
- * Eventos 'processing' SEM token (gravados por código anterior a esta mudança)
- * só são retomados depois do mesmo limite do reaper legado: 15 min de createdAt.
+ * Eventos 'processing' SEM token foram reivindicados por código anterior a
+ * esta mudança, que não registra posse nem início. Não há como saber se a
+ * execução antiga ainda roda. Por isso só são retomados quando:
+ *  - EVENT_LEGACY_FENCE_AT está definida e já passou: o operador declara que,
+ *    a partir desse instante, nenhum processo com o código antigo está de pé
+ *    (deploy concluído em todos os serviços); e
+ *  - o evento é mais antigo que o limite do reaper legado (15 min de createdAt).
+ * Sem a cerca, esses eventos ficam intocados (o reaper só os conta e avisa).
  */
 export const LEGACY_STUCK_MS = 15 * 60_000;
+
+export function legacyFenceFromEnv(env = process.env) {
+  const raw = env.EVENT_LEGACY_FENCE_AT;
+  if (raw === undefined || raw.trim() === '') return null;
+  const d = new Date(raw.trim());
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(raw.trim()) || Number.isNaN(d.getTime())) {
+    throw new Error(`EVENT_LEGACY_FENCE_AT inválido: "${raw}" (use data ISO 8601 com fuso, ex.: 2026-11-20T03:00:00Z)`);
+  }
+  return d;
+}
+
+/** Filtro de evento legado (sem posse) que já pode ser retomado, ou null. */
+export function legacyAbandonedFilter(now, fence) {
+  if (!fence || now.getTime() < fence.getTime()) return null;
+  return {
+    // null ou ausente: sem posse registrada
+    processingToken: null,
+    leaseExpiresAt: null,
+    createdAt: { $lt: new Date(Math.min(now.getTime() - LEGACY_STUCK_MS, fence.getTime())) }
+  };
+}
 
 export function leaseMsFromEnv(env = process.env) {
   const raw = env.EVENT_LEASE_MS;
@@ -98,7 +125,7 @@ export function notLiveOwnedFilter(now) {
  * @returns {Promise<{status:'claimed', token, leaseExpiresAt}
  *   | {status:'not_found'|'already_processed'|'dead_letter'|'busy'|'not_claimable', current?}>}
  */
-export async function claimEvent(eventId, owner, { leaseMs = DEFAULT_LEASE_MS, now = new Date(), maxRecoveries = MAX_RECOVERIES, alert = sendAlert } = {}) {
+export async function claimEvent(eventId, owner, { leaseMs = DEFAULT_LEASE_MS, now = new Date(), maxRecoveries = MAX_RECOVERIES, alert = sendAlert, legacyFence = legacyFenceFromEnv() } = {}) {
   const token = randomUUID();
   const leaseExpiresAt = new Date(now.getTime() + leaseMs);
   const claimSet = {
@@ -119,14 +146,11 @@ export async function claimEvent(eventId, owner, { leaseMs = DEFAULT_LEASE_MS, n
   if (claimed) return { status: 'claimed', token, leaseExpiresAt };
 
   // 2. Retomada de execução abandonada (conta como recuperação).
+  const legacy = legacyAbandonedFilter(now, legacyFence);
   const abandoned = {
     status: 'processing',
-    $or: [
-      // Prazo vencido.
-      { leaseExpiresAt: { $lte: now } },
-      // Execução legada sem posse, presa pelo critério do reaper antigo.
-      { processingToken: { $exists: false }, leaseExpiresAt: { $exists: false }, createdAt: { $lt: new Date(now.getTime() - LEGACY_STUCK_MS) } }
-    ]
+    // Prazo vencido; ou execução legada sem posse, só depois da cerca.
+    $or: legacy ? [{ leaseExpiresAt: { $lte: now } }, legacy] : [{ leaseExpiresAt: { $lte: now } }]
   };
   const retaken = await EventStore.findOneAndUpdate(
     { eventId, ...abandoned, $and: [{ $or: [{ recoveryCount: { $exists: false } }, { recoveryCount: null }, { recoveryCount: { $lt: maxRecoveries - 1 } }] }] },

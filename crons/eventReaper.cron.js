@@ -24,7 +24,7 @@ const STUCK_THRESHOLD_MINUTES = 15;
 const MAX_ATTEMPTS_FOR_RETRY = 3;
 
 // Limite e justificativa em infrastructure/events/eventOwnership.js (fonte única).
-import { MAX_RECOVERIES } from '../infrastructure/events/eventOwnership.js';
+import { MAX_RECOVERIES, legacyFenceFromEnv, legacyAbandonedFilter } from '../infrastructure/events/eventOwnership.js';
 export { MAX_RECOVERIES };
 
 const LEGACY_MESSAGE = `Auto-recovered from stuck processing after ${STUCK_THRESHOLD_MINUTES}min`;
@@ -34,17 +34,21 @@ const EXHAUSTED_MESSAGE = `Recovery limit reached (${MAX_RECOVERIES}); moved to 
 /**
  * Elegível: em 'processing' e
  *  - com posse (leaseExpiresAt) vencida, ou
- *  - sem posse registrada (gravado por código antigo) e createdAt > 15 min (critério legado).
+ *  - sem posse registrada (reivindicado por código antigo): só depois da cerca
+ *    EVENT_LEGACY_FENCE_AT e com createdAt > 15 min (ver eventOwnership.js).
+ *    Sem cerca, nunca: a execução antiga pode estar rodando.
  */
-export function stuckFilter(now) {
-  const threshold = new Date(now.getTime() - STUCK_THRESHOLD_MINUTES * 60 * 1000);
+export function stuckFilter(now, legacyFence = legacyFenceFromEnv()) {
+  const legacy = legacyAbandonedFilter(now, legacyFence);
   return {
     status: 'processing',
-    $or: [
-      { leaseExpiresAt: { $lte: now } },
-      { leaseExpiresAt: { $exists: false }, createdAt: { $lt: threshold } }
-    ]
+    $or: legacy ? [{ leaseExpiresAt: { $lte: now } }, legacy] : [{ leaseExpiresAt: { $lte: now } }]
   };
+}
+
+/** Eventos sem posse que esperam a cerca (só contagem, para aviso). */
+export function legacyAwaitingFilter() {
+  return { status: 'processing', processingToken: null, leaseExpiresAt: null };
 }
 
 /**
@@ -75,14 +79,19 @@ export function decide(event, maxRecoveries = MAX_RECOVERIES) {
  * e à posse observados: se o worker concluir, falhar ou renovar a posse entre
  * a leitura e a escrita, nada é sobrescrito.
  */
-export async function reapStuckEvents({ now = new Date(), alert = sendAlert, maxRecoveries = MAX_RECOVERIES, batchSize = 100 } = {}) {
-    const stuckEvents = await EventStore.find(stuckFilter(now), {
+export async function reapStuckEvents({ now = new Date(), alert = sendAlert, maxRecoveries = MAX_RECOVERIES, batchSize = 100, legacyFence = legacyFenceFromEnv() } = {}) {
+    const legacyActive = !!legacyAbandonedFilter(now, legacyFence);
+    const legacyAwaiting = legacyActive ? 0 : await EventStore.countDocuments(legacyAwaitingFilter());
+    if (legacyAwaiting > 0) {
+        log.warn('reaper_legacy_awaiting_fence', `${legacyAwaiting} evento(s) em processing sem posse (código antigo) aguardando EVENT_LEGACY_FENCE_AT; não são retomados`, { legacyAwaiting });
+    }
+    const stuckEvents = await EventStore.find(stuckFilter(now, legacyFence), {
         eventId: 1, eventType: 1, status: 1, attempts: 1, createdAt: 1,
         processingToken: 1, leaseExpiresAt: 1, recoveryCount: 1
     }).sort({ createdAt: 1 }).limit(batchSize).lean();
 
     if (stuckEvents.length === 0) {
-        return { reset: 0, failed: 0, deadLetter: 0, lostRace: 0, total: 0 };
+        return { reset: 0, failed: 0, deadLetter: 0, lostRace: 0, total: 0, legacyAwaiting };
     }
 
     log.warn('reaper_start', `Encontrados ${stuckEvents.length} evento(s) travados em processing`, {
@@ -152,7 +161,7 @@ export async function reapStuckEvents({ now = new Date(), alert = sendAlert, max
         }
     }
 
-    return { reset: resetCount, failed: failCount, deadLetter: deadCount, lostRace, total: stuckEvents.length, details };
+    return { reset: resetCount, failed: failCount, deadLetter: deadCount, lostRace, total: stuckEvents.length, legacyAwaiting, details };
 }
 
 async function runOnce() {

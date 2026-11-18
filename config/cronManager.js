@@ -69,6 +69,8 @@ export function resolveEventReaperOwner(env = process.env) {
 export async function startAllCrons() {
     // Valida antes de iniciar qualquer cron: configuração inválida falha inteira.
     const reaperOwner = resolveEventReaperOwner();
+    const { legacyFenceFromEnv } = await import('../infrastructure/events/eventOwnership.js');
+    legacyFenceFromEnv(); // EVENT_LEGACY_FENCE_AT inválida derruba a inicialização
 
     const { initAppointmentRecoveryCron } = await import("../crons/appointmentRecovery.cron.js");
     startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
