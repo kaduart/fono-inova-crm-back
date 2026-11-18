@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest, scanConvenioInterestDeep, readChatActivity, getChatActivity } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest, scanConvenioInterestDeep, readChatActivity, getChatActivity, getPageMemory } from '../../services/whatsappWebJsService.js';
 import fs from 'fs';
 import path from 'path';
 import { Worker } from 'bullmq';
@@ -192,8 +192,10 @@ async function main() {
     }, 5000);
 
     // Log de memória a cada 30s (processo + container)
-    setInterval(() => {
+    setInterval(async () => {
         const mem = process.memoryUsage();
+        const pageMem = await getPageMemory();
+        const pageInfo = pageMem ? ` | aba JS ${pageMem.jsHeapUsedMB}/${pageMem.jsHeapTotalMB}MB` : '';
         let sysMem = '';
         try {
             const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
@@ -205,7 +207,7 @@ async function main() {
                 sysMem = ` | Container: ${usedMB}/${totalMB}MB`;
             }
         } catch {}
-        console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB${sysMem}${containerBreakdown()}`);
+        console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB${sysMem}${containerBreakdown()}${pageInfo}`);
         checkMemoryRestart().catch(() => {});
     }, 30000);
 

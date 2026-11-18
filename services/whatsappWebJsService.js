@@ -457,6 +457,13 @@ function attachPageNoiseFilters(newClient) {
       return setTimeout(tryAttach, 1000);
     }
 
+    // Aba morreu (ex.: bateu o teto de heap JS): sai limpo para o parent respawnar só o WhatsApp,
+    // em vez de esperar o Chrome crescer até o Render matar a instância toda.
+    page.on('error', (err) => {
+      if (client !== newClient) return;
+      restartForRecovery(`aba do WhatsApp caiu (${err?.message || err}) — provável limite de memória`);
+    });
+
     page.on('pageerror', (err) => {
       const msg = err?.message || String(err);
       if (isPageNoise(msg)) return;
@@ -480,6 +487,32 @@ function attachPageNoiseFilters(newClient) {
   };
 
   setTimeout(tryAttach, 1000);
+}
+
+// Teto do heap JS da aba do WhatsApp Web (MB). Padrão 1024; 0 ou inválido = sem teto.
+export function chromeJsHeapArgs(env = process.env) {
+  const raw = env.WHATSAPP_CHROME_JS_HEAP_MB;
+  const mb = raw === undefined || raw === '' ? 1024 : Number(raw);
+  if (!Number.isFinite(mb) || mb <= 0) return [];
+  return [`--js-flags=--max-old-space-size=${Math.round(mb)}`];
+}
+
+// Heap JS da aba (para o log de memória do child). Nunca lança; null se não der para ler.
+export async function getPageMemory() {
+  const page = client?.pupPage;
+  if (!page) return null;
+  try {
+    const m = await Promise.race([
+      page.metrics(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ]);
+    return {
+      jsHeapUsedMB: Math.round((m.JSHeapUsedSize || 0) / 1048576),
+      jsHeapTotalMB: Math.round((m.JSHeapTotalSize || 0) / 1048576),
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ─── Criação do cliente ─────────────────────────────────────────────────────
@@ -596,6 +629,12 @@ function createClient() {
         // isolamento por site a página fica no mesmo processo.
         '--disable-site-isolation-trials',
         '--disable-features=IsolateOrigins,site-per-process',
+        // 18/11/2026: o crm-worker vive em ~1,5 GB de 2 GB (aba do WhatsApp ~1,1 GB) e um pico de
+        // poucos segundos estoura o limite do Render, que mata a instância INTEIRA (filas, Outbox,
+        // lembretes), não só o WhatsApp. Com teto no heap JS da aba, um pico derruba só a aba
+        // (evento 'error' da página → restartForRecovery → o parent sobe outro child em 10 s).
+        // WHATSAPP_CHROME_JS_HEAP_MB=0 desliga o teto.
+        ...chromeJsHeapArgs(),
       ],
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
