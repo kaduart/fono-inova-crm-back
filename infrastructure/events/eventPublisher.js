@@ -416,7 +416,11 @@ export async function publishEvent(eventType, payload, options = {}) {
         aggregateId = null,
         delay = 0, 
         priority = 5,
-        metadata = {}
+        metadata = {},
+        // false: o chamador garante a deduplicação pela idempotencyKey (comandos de
+        // dinheiro com chave do cliente ou chave natural). O debounce por aggregate
+        // descartaria em silêncio um segundo pagamento legítimo do mesmo paciente.
+        debounce = true
     } = options;
     
     const log = createContextLogger(correlationId, 'event_publisher');
@@ -468,7 +472,7 @@ if (size > 5000) {
                                eventType === 'WHATSAPP_MESSAGE_PREPROCESSED' ||
                                eventType === 'MESSAGE_PERSISTED';
     
-    if (!isWhatsAppInbound && shouldDebounce(finalAggregateId, eventType)) {
+    if (debounce !== false && !isWhatsAppInbound && shouldDebounce(finalAggregateId, eventType)) {
         console.warn(`[EVENT_DEBOUNCED] ${eventType} aggregate=${finalAggregateId} — evento legítimo pode ter sido perdido`);
         log.warn('debounced', 'Evento debounced (publicado recentemente)', { eventType, aggregateId: finalAggregateId });
         return {

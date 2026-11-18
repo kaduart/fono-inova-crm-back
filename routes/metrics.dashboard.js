@@ -19,6 +19,7 @@ import { auth } from '../middleware/auth.js';
 import { logMetric } from '../utils/logMetric.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { staffOnly } from '../middleware/observabilityAccess.js';
 
 const router = express.Router();
 const logger = createContextLogger('MetricsDashboard');
@@ -81,7 +82,7 @@ const monitoredQueues = Object.fromEntries(
 // Dashboard completo de métricas
 // ============================================
 
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', ...staffOnly, async (req, res) => {
   const startTime = Date.now();
   
   try {
@@ -130,7 +131,7 @@ router.get('/dashboard', async (req, res) => {
 // Métricas específicas de uma fila
 // ============================================
 
-router.get('/queues/:name', async (req, res) => {
+router.get('/queues/:name', ...staffOnly, async (req, res) => {
   const { name } = req.params;
   
   if (!monitoredQueues[name]) {
@@ -159,7 +160,7 @@ router.get('/queues/:name', async (req, res) => {
 // Status dos SLOs
 // ============================================
 
-router.get('/slo', async (req, res) => {
+router.get('/slo', ...staffOnly, async (req, res) => {
   try {
     const sloStatus = await checkSLOs();
     
@@ -448,7 +449,7 @@ async function checkSLOs() {
 // Dashboard de decisões do AmandaOrchestrator
 // ============================================
 
-router.get('/decision', async (req, res) => {
+router.get('/decision', ...staffOnly, async (req, res) => {
   try {
     const windowMinutes = req.query.window ? parseInt(req.query.window, 10) : undefined;
     const last          = req.query.last   ? parseInt(req.query.last, 10)   : undefined;

@@ -86,12 +86,13 @@ describe('envio da ponte com deliveryGuard', () => {
     };
   };
 
-  it('usa o id do job como requestId e devolve o messageId', async () => {
+  it('usa a mesma chave do modo local (wweb:send:<job>) como requestId, manda a enquete do CRM e devolve o messageId', async () => {
     const seen = [];
     const sender = makeConnectorSender({ client: { sendMessage: async (p) => { seen.push(p); return { success: true, messageId: 'M1' }; } }, guardedSend: fakeGuard(), DeliveryOutcome });
     const r = await sender({ id: '42' }, '5562999990000', 'oi', { attendanceConfirmation: true, appointmentId: 'a1' });
     expect(r).toEqual({ success: true, messageId: 'M1' });
-    expect(seen[0]).toMatchObject({ requestId: 'whatsapp-send:42', kind: 'attendance_confirmation', appointmentId: 'a1' });
+    expect(seen[0]).toMatchObject({ requestId: 'wweb:send:42', kind: 'attendance_confirmation', appointmentId: 'a1' });
+    expect(seen[0].poll).toMatchObject({ question: expect.stringContaining('presença'), options: expect.any(Array) });
   });
 
   it('incerto: devolve { uncertain } e a retentativa NÃO chama o conector de novo', async () => {
@@ -101,6 +102,16 @@ describe('envio da ponte com deliveryGuard', () => {
     const sender = makeConnectorSender({ client, guardedSend: guard, DeliveryOutcome });
     expect(await sender({ id: '7' }, '5562999990000', 'oi')).toMatchObject({ uncertain: true });
     expect(await sender({ id: '7' }, '5562999990000', 'oi')).toMatchObject({ uncertain: true });
+    expect(n).toBe(1);
+  });
+
+  it('já enviado (mesma chave): devolve alreadySent sem chamar o conector', async () => {
+    let n = 0;
+    const guard = fakeGuard();
+    const client = { sendMessage: async () => { n++; return { success: true, messageId: 'M9' }; } };
+    const sender = makeConnectorSender({ client, guardedSend: guard, DeliveryOutcome });
+    await sender({ id: '11' }, '5562999990000', 'oi');
+    expect(await sender({ id: '11' }, '5562999990000', 'oi')).toMatchObject({ alreadySent: true });
     expect(n).toBe(1);
   });
 

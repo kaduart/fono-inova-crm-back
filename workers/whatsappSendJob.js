@@ -79,6 +79,12 @@ export async function processWhatsappSendJob(job, deps) {
             console.warn(`[${tag}] ❓ Job ${job.id} — envio INCERTO (${result.reason || 'sem confirmação'}); não marcado como enviado`);
             return result;
         }
+        // Guarda de entregas: incerto ou outra execução enviando → não envia de novo e não marca nada.
+        if (result?.skipped) {
+            console.warn(`[${tag}] ⏭️ Job ${job.id} — não enviado agora (${result.delivery}); sem reenvio automático`);
+            return result;
+        }
+        if (result?.alreadySent) console.warn(`[${tag}] ⏭️ Job ${job.id} — já enviado antes; só refazendo as marcações`);
         if ((purpose === 'convenio_offer' || purpose === 'convenio_announce') && job.data.waitlistIds?.length) {
             const { markOfferSent } = await import('../services/convenioWaitlistOffer.js');
             await markOfferSent(job.data.waitlistIds, { purpose, messageId: result?.messageId || null });

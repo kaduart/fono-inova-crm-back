@@ -212,10 +212,16 @@ async function main() {
     }, 30000);
 
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
+    // Envio pelo guarda de entregas (deliverWhatsAppWebJob, chave wweb:send:<job.id>): a retentativa não reenvia
+    // o que já saiu e o resultado incerto não reenvia sozinho. A mesma chave vale no modo externo (ponte).
     const { processWhatsappSendJob, onWhatsappSendJobFailed } = await import('../whatsappSendJob.js');
+    const { deliverWhatsAppWebJob } = await import('./whatsappWebDelivery.js');
     const whatsappWorker = new Worker('whatsapp-send', (job) => processWhatsappSendJob(job, {
         tag: 'CHILD WORKER',
-        sendMessage: (_job, phone, message, opts) => sendMessage(phone, message, opts),
+        sendMessage: async (_job, phone, message, opts) => {
+            const { result, outcome } = await deliverWhatsAppWebJob({ jobId: _job.id, phone, send: () => sendMessage(phone, message, opts) });
+            return result || { skipped: true, delivery: outcome };
+        },
         getChatActivity,
     }), {
         connection: bullMqConnection,

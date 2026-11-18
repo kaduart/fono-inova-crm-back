@@ -444,12 +444,17 @@ router.post('/request', auth, requireStaff, async (req, res) => {
         // ========================================
         // 🚀 PUBLICA EVENTO: PAYMENT_PROCESS_REQUESTED
         // ========================================
+        // Chave estável (cliente ou natural): a deduplicação é pela chave, sem
+        // debounce. Sem chave do cliente, o debounce continua (ele também é a única
+        // barreira contra o clique duplo de clientes antigos).
+        const stableKey = Boolean(clientKey) || Boolean(type === 'appointment_payment' && appointmentId) || isMulti;
         const eventResult = await publishEvent(
             EventTypes.PAYMENT_PROCESS_REQUESTED,
             normalizedPayload,
             {
                 correlationId,
                 idempotencyKey,
+                debounce: !stableKey,
                 aggregateType: 'payment',
                 aggregateId: appointmentId || patientId,
                 metadata: {
@@ -461,6 +466,30 @@ router.post('/request', auth, requireStaff, async (req, res) => {
                 }
             }
         );
+
+        if (eventResult.debounced) {
+            // Antes respondia 202 "enfileirado" sem enfileirar nada.
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_DEBOUNCED', 'Outro pagamento deste paciente acabou de ser enviado. Confira a lista e, se for outro pagamento, envie de novo em alguns segundos.', { status: 409 }),
+              req
+            );
+        }
+        if (eventResult.duplicate) {
+            const existing = await EventStore.findOne({ idempotencyKey }).lean();
+            return res.status(200).json({
+                success: true,
+                message: 'Pagamento já foi enfileirado',
+                duplicated: true,
+                data: {
+                    eventId: existing?.eventId || null,
+                    correlationId: existing?.correlationId || correlationId,
+                    idempotencyKey,
+                    status: existing?.status || eventResult.existingStatus || 'pending',
+                    checkStatusUrl: existing?.eventId ? `/api/v2/payments/status/${existing.eventId}` : null
+                }
+            });
+        }
 
         console.log(`[PaymentV2] Evento publicado: ${eventResult.eventId}`, {
             correlationId,
@@ -591,6 +620,7 @@ router.post('/balance/:patientId/multi', auth, requireStaff, async (req, res) =>
             {
                 correlationId,
                 idempotencyKey,
+                debounce: false, // chave natural (paciente + débitos) deduplica
                 aggregateType: 'payment',
                 aggregateId: patientId,
                 priority: 7, // Prioridade alta para pagamentos
@@ -601,6 +631,22 @@ router.post('/balance/:patientId/multi', auth, requireStaff, async (req, res) =>
                 }
             }
         );
+
+        if (eventResult.duplicate) {
+            const EventStore = (await import('../models/EventStore.js')).default;
+            const existing = await EventStore.findOne({ idempotencyKey }).lean();
+            return res.status(200).json({
+                success: true,
+                message: 'Pagamento múltiplo já foi enfileirado',
+                duplicated: true,
+                data: {
+                    eventId: existing?.eventId || null,
+                    status: existing?.status || eventResult.existingStatus || 'pending',
+                    type: 'multi_payment',
+                    checkStatusUrl: existing?.eventId ? `/api/v2/payments/status/${existing.eventId}` : null
+                }
+            });
+        }
 
         console.log(`[PaymentV2] Payment-multi enfileirado: ${eventResult.eventId}`, {
             correlationId,

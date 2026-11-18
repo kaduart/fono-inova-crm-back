@@ -36,6 +36,7 @@ import { nextStage } from "../services/intelligence/stageEngine.js";
 import manageLeadCircuit from "../services/leadCircuitService.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import { sendLocationMessage, sendTextMessage } from "../services/whatsappService.js";
+import { guardedSend } from "../infrastructure/delivery/deliveryGuard.js";
 import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
@@ -2607,8 +2608,14 @@ async function _getOptimizedAmandaResponseInternal({
             url: "https://www.google.com/maps/dir//Av.+Minas+Gerais,+405+-+Jundiaí,+Anápolis+-+GO,+75110-770/@-16.3315712,-48.9488384,14z"
         };
 
+        // Reprocessar a mesma mensagem recebida (retry do job, reentrega do webhook)
+        // não manda a localização de novo: a chave vem do id da mensagem de entrada.
+        const onceForInbound = (part, send) => messageId
+            ? guardedSend({ channel: 'whatsapp', deliveryKey: `amanda_location:${messageId}:${part}`, destination: lead.contact.phone, send })
+            : send();
+
         // 1️⃣ envia o pin real (mensagem type: "location")
-        await sendLocationMessage({
+        await onceForInbound('pin', () => sendLocationMessage({
             to: lead.contact.phone,
             lead: lead._id,
             contactId: lead.contact._id,
@@ -2618,18 +2625,18 @@ async function _getOptimizedAmandaResponseInternal({
             address: coords.address,
             url: coords.url,
             sentBy: "amanda",
-        });
+        }));
 
         await new Promise(res => setTimeout(res, 800));
 
         // 2️⃣ envia a mensagem de texto complementar
-        await sendTextMessage({
+        await onceForInbound('text', () => sendTextMessage({
             to: lead.contact.phone,
             text: `Claro! 📍 Aqui está nossa localização:\n\n**${coords.name}**\n${coords.address}\n\n🗺️ ${coords.url}`,
             lead: lead._id,
             contactId: lead.contact._id,
             sentBy: "amanda",
-        });
+        }));
 
         return null;
     } else if (asksInsurance) {

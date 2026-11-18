@@ -5,7 +5,7 @@
 // whatsappWebJsService (há teste que confere o grafo de imports). Tudo que precisa do navegador vai por HTTP.
 //
 // O que roda aqui (regras de negócio continuam no CRM):
-//   - fila whatsapp-send          → envio idempotente pelo conector (requestId = id do job) + deliveryGuard;
+//   - fila whatsapp-send          → envio idempotente pelo conector (requestId = chave wweb:send:<job>) + deliveryGuard;
 //   - fila whatsapp-scan          → varredura profunda e última conversa, lendo do conector em lotes;
 //   - fila whatsapp-connector-events → eventos do conector (mensagem recebida, enviada, voto);
 //   - estado da conexão           → lê GET /v1/status a cada 5 s e grava em WhatsAppWebState (o front não muda);
@@ -19,6 +19,7 @@ import { getConnectorClient } from '../services/whatsappConnector/client.js';
 import { CONNECTOR_EVENTS_QUEUE } from '../services/whatsappConnector/eventsReceiver.js';
 import { processConnectorEvent, processPollVote } from '../services/whatsappInboundProcessor.js';
 import { processWhatsappSendJob, onWhatsappSendJobFailed } from './whatsappSendJob.js';
+import { ATTENDANCE_POLL } from '../constants/attendancePoll.js';
 
 const TAG = 'WA-BRIDGE';
 const STATUS_INTERVAL_MS = 5_000;
@@ -26,27 +27,33 @@ const POLL_VOTES_INTERVAL_MS = 15_000;
 const UNREACHABLE_AFTER = 3; // leituras seguidas sem resposta até mostrar "conector fora" no ERP
 
 /**
- * Envio pelo conector com deliveryGuard: chave estável por job (retentativas do BullMQ reaproveitam a chave,
- * e o conector reaproveita o requestId) → nunca duas mensagens para o mesmo job.
+ * Envio pelo conector com deliveryGuard. A chave é a MESMA do modo local (`wweb:send:<job.id>`,
+ * workers/entrypoints/whatsappWebDelivery.js): retentativa do BullMQ, job duplicado ou troca de modo no
+ * meio do job não reenviam. A mesma chave vai como requestId, e o conector também deduplica por ela.
+ * Retorno igual ao do modo local: { success, messageId, alreadySent? } | { uncertain } | { skipped }.
  */
 export function makeConnectorSender({ client, guardedSend, DeliveryOutcome }) {
   return async (job, phone, message, opts = {}) => {
-    const deliveryKey = `whatsapp-send:${job.id}`;
-    const kind = opts.attendanceConfirmation ? 'attendance_confirmation' : 'text';
+    const deliveryKey = `wweb:send:${job.id}`;
+    const attendance = Boolean(opts.attendanceConfirmation && opts.appointmentId);
     const delivery = await guardedSend({
       channel: 'whatsapp',
       deliveryKey,
       destination: phone,
-      send: () => client.sendMessage({ requestId: deliveryKey, phone, text: message, kind, appointmentId: opts.appointmentId || null }),
+      send: () => client.sendMessage({
+        requestId: deliveryKey, phone, text: message,
+        kind: attendance ? 'attendance_confirmation' : 'text',
+        appointmentId: opts.appointmentId || null,
+        // Texto da enquete é regra do CRM: o conector só monta a enquete com o que recebe.
+        poll: attendance ? { question: ATTENDANCE_POLL.question, options: [...ATTENDANCE_POLL.options], fallbackText: ATTENDANCE_POLL.fallbackText } : null,
+      }),
       providerMessageIdOf: (r) => r?.messageId || null,
       leaseMs: 5 * 60_000, // envio (até ~100 s) + consulta do resultado incerto cabem com folga
     });
+    if (delivery.outcome === DeliveryOutcome.SENT) return { success: true, messageId: delivery.providerMessageId || delivery.result?.messageId || null };
+    if (delivery.outcome === DeliveryOutcome.ALREADY_SENT) return { success: true, messageId: delivery.providerMessageId || null, alreadySent: true };
     if (delivery.outcome === DeliveryOutcome.UNCERTAIN) return { uncertain: true, reason: delivery.error?.message || 'resultado incerto no conector', deliveryKey };
-    if (delivery.outcome === DeliveryOutcome.IN_PROGRESS) {
-      // Outra execução do mesmo job está enviando: erro para o BullMQ tentar mais tarde (sem reenviar).
-      throw new Error(`envio ${deliveryKey} em andamento em outra execução`);
-    }
-    return { success: true, messageId: delivery.providerMessageId || delivery.result?.messageId || null };
+    return { skipped: true, delivery: delivery.outcome }; // IN_PROGRESS: outra execução está enviando
   };
 }
 

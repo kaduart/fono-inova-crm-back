@@ -18,6 +18,7 @@ import Appointment from '../models/Appointment.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { getMemorySnapshot } from '../infrastructure/observability/memoryStats.js';
 import { whatsappState } from '../services/whatsappWebJsService.js';
+import { staffOnly, minimalHealthBody } from '../middleware/observabilityAccess.js';
 
 const router = express.Router();
 
@@ -33,7 +34,19 @@ const ALERTS = {
  * Health check básico
  * GET /api/health
  */
+// Público (healthCheckPath do Render e monitores): só status e horário.
 router.get('/', async (req, res) => {
+    try {
+        const checks = await runBasicChecks();
+        const ok = checks.status === 'healthy';
+        return res.status(ok ? 200 : 503).json(minimalHealthBody(ok));
+    } catch {
+        return res.status(503).json(minimalHealthBody(false));
+    }
+});
+
+// Mesmo conteúdo de antes do GET /, agora com login.
+router.get('/basic', ...staffOnly, async (req, res) => {
     try {
         const checks = await runBasicChecks();
         const isHealthy = checks.status === 'healthy';
@@ -57,7 +70,7 @@ router.get('/', async (req, res) => {
  * Endpoint específico para o Monitor do Sistema (Frontend)
  * GET /api/health/monitor
  */
-router.get('/monitor', async (req, res) => {
+router.get('/monitor', ...staffOnly, async (req, res) => {
     try {
         const mem = getMemorySnapshot();
 
@@ -123,7 +136,7 @@ router.get('/monitor', async (req, res) => {
  * Health check detalhado
  * GET /api/health/detailed
  */
-router.get('/detailed', async (req, res) => {
+router.get('/detailed', ...staffOnly, async (req, res) => {
     try {
         const [basic, detailed] = await Promise.all([
             runBasicChecks(),
@@ -156,7 +169,7 @@ router.get('/detailed', async (req, res) => {
  * Verifica eventos travados
  * GET /api/health/stuck-events
  */
-router.get('/stuck-events', async (req, res) => {
+router.get('/stuck-events', ...staffOnly, async (req, res) => {
     try {
         const minAgeMinutes = parseInt(req.query.minutes) || ALERTS.stuckMinutes;
         const minAgeMs = minAgeMinutes * 60 * 1000;
@@ -193,7 +206,7 @@ router.get('/stuck-events', async (req, res) => {
  * Verifica filas
  * GET /api/health/queues
  */
-router.get('/queues', async (req, res) => {
+router.get('/queues', ...staffOnly, async (req, res) => {
     try {
         const queueNames = [
             'complete-orchestrator',
@@ -247,7 +260,7 @@ router.get('/queues', async (req, res) => {
  * Health Check Full (para SystemMonitorDashboard)
  * GET /api/health/full
  */
-router.get('/full', async (req, res) => {
+router.get('/full', ...staffOnly, async (req, res) => {
     try {
         // Status considera RSS (RAM real) E heap vs teto do V8 — ver memoryStats.js
         const mem = getMemorySnapshot();
@@ -440,7 +453,7 @@ async function runDetailedChecks() {
  * Health check consolidado de workers por domínio
  * GET /api/health/workers
  */
-router.get('/workers', async (req, res) => {
+router.get('/workers', ...staffOnly, async (req, res) => {
     try {
         const GROUP_QUEUES = {
             scheduling: [
@@ -571,7 +584,7 @@ router.get('/workers', async (req, res) => {
  * no Chromium e não toca na sessão. Útil para monitoramento e para o
  * processo pai saber se o child está realmente pronto.
  */
-router.get('/whatsapp', async (req, res) => {
+router.get('/whatsapp', ...staffOnly, async (req, res) => {
     try {
         const queue = getQueue('whatsapp-send');
         const [waiting, active, failed, delayed] = await Promise.all([

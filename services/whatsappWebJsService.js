@@ -26,6 +26,7 @@ import { normalizeE164BR } from '../utils/phone.js';
 import { resolveAttendancePollVoterPhone } from '../utils/attendancePollVoter.js';
 import { PINNED_CHROME_VERSION, chromeBinarySubpath } from '../config/chromeVersion.js';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
+import { ATTENDANCE_POLL } from '../constants/attendancePoll.js';
 
 // ─── Papel do processo (18/11/2026, separação do conector — docs/WHATSAPP_CONECTOR_EXTERNO.md) ───
 // WA_ENGINE_ROLE=connector → este processo É o conector (Chrome + sessão), sem MongoDB: o que chega do
@@ -1749,36 +1750,36 @@ export async function getStatus() {
 }
 
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
+// Erro lançado ANTES de qualquer client.sendMessage: prova que nada saiu
+// (o guarda de entregas libera nova tentativa só nesses casos).
+const notSentError = (msg) => Object.assign(new Error(msg), { deliveryNotSent: true });
+
 export async function sendMessage(phone, message, options = {}) {
   if (!isReady || !client) {
-    throw new Error('WhatsApp não está conectado');
+    throw notSentError('WhatsApp não está conectado');
   }
   const clean = normalizeE164BR(phone);
   if (!clean) {
-    throw new Error(`Número inválido: ${phone}`);
+    throw notSentError(`Número inválido: ${phone}`);
   }
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
   try {
     const numberId = await client.getNumberId(clean);
     if (!numberId) {
-      throw new Error(`Número ${clean} não possui WhatsApp`);
+      throw notSentError(`Número ${clean} não possui WhatsApp`);
     }
     let result;
     if (options.attendanceConfirmation && options.appointmentId) {
       await client.sendMessage(numberId._serialized, message);
       try {
         if (typeof Poll !== 'function') throw new Error('Poll não disponível nesta versão');
-        const poll = new Poll(
-          'Confirme sua presença 💚',
-          ['Confirmar presença ✅', 'Falar com a recepção'],
-          { allowMultipleAnswers: false }
-        );
+        const poll = new Poll(ATTENDANCE_POLL.question, [...ATTENDANCE_POLL.options], { allowMultipleAnswers: false });
         // waitUntilMsgSent: sem esperar o envio efetivo, a biblioteca devolve
         // `undefined` para criação de enquete e gravávamos 'unknown' no agendamento.
         result = await client.sendMessage(numberId._serialized, poll, { waitUntilMsgSent: true });
       } catch (pollError) {
         console.warn('[WhatsAppWeb] ⚠️ Opções clicáveis indisponíveis; enviando fallback em texto:', pollError.message);
-        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Falar com a recepção`, { waitUntilMsgSent: true });
+        result = await client.sendMessage(numberId._serialized, ATTENDANCE_POLL.fallbackText, { waitUntilMsgSent: true });
       }
     } else {
       result = await client.sendMessage(numberId._serialized, message, { waitUntilMsgSent: true });
