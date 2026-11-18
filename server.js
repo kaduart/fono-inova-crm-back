@@ -401,7 +401,7 @@ app.get('/debug/env', auth, authorize(['admin']), (req, res) => {
 });
 
 // 🚨 Endpoint crítico: diagnostica se este processo está competindo pelo WhatsApp
-app.get('/debug/whatsapp-diagnostic', async (req, res) => {
+app.get('/debug/whatsapp-diagnostic', auth, authorize(['admin']), async (req, res) => {
     const { getStatus } = await import('./services/whatsappWebJsService.js');
     const { safeRedis } = await import('./config/redisConnection.js');
     const status = await getStatus();
@@ -538,7 +538,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
-app.use('/api/v2/financial/audit', financialAuditV2Routes);  // 🔍 Auditoria V1 vs V2
+app.use('/api/v2/financial/audit', auth, authorize(['admin']), financialAuditV2Routes);  // 🔍 Auditoria V1 vs V2
 app.use('/api/internal/financial', financialReconciliationRoutes);  // 🔍 Reconciliação financeira por profissional
 app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
 app.use('/api/metrics', metricsDashboardRoutes);
