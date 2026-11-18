@@ -269,10 +269,25 @@ async function main() {
         }
         console.log(`[CHILD WORKER] 📤 Job ${job.id} — enviando para ${phone}`);
         console.log(`[CHILD WORKER] 📤 Conteúdo: ${message.substring(0, 80)}...`);
-        const result = await sendMessage(phone, message, {
-            attendanceConfirmation: purpose === 'attendance_confirmation',
-            appointmentId,
+        // Guarda de entregas: a retentativa do job (attempts: 3) ou um job travado
+        // que volta para a fila não reenvia o que já saiu. Os jobIds são
+        // determinísticos (birthday-, famsum-, attconf-, monthly-), então a chave
+        // também barra o mesmo envio enfileirado de novo. Timeout depois do envio
+        // fica "incerto" e não reenvia sozinho.
+        const { deliverWhatsAppWebJob } = await import('./whatsappWebDelivery.js');
+        const { result, outcome } = await deliverWhatsAppWebJob({
+            jobId: job.id,
+            phone,
+            send: () => sendMessage(phone, message, {
+                attendanceConfirmation: purpose === 'attendance_confirmation',
+                appointmentId,
+            }),
         });
+        if (!result) {
+            console.warn(`[CHILD WORKER] ⏭️ Job ${job.id} — não enviado agora (${outcome}); sem reenvio automático`);
+            return { skipped: true, delivery: outcome };
+        }
+        if (result.alreadySent) console.warn(`[CHILD WORKER] ⏭️ Job ${job.id} — já enviado antes; só refazendo as marcações`);
         if ((purpose === 'convenio_offer' || purpose === 'convenio_announce') && job.data.waitlistIds?.length) {
             const { markOfferSent } = await import('../../services/convenioWaitlistOffer.js');
             await markOfferSent(job.data.waitlistIds, { purpose, messageId: result?.messageId || null });

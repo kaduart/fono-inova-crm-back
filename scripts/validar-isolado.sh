@@ -41,6 +41,10 @@ run "Observabilidade: público mínimo, staff e admin (6)" env REDIS_URL="redis:
 run "Pagamentos: idempotência e atomicidade (15)"        npm run -s test:pagamentos-idempotencia
 run "Recebimento (/receive) pela camada HTTP (9)"        env REDIS_URL="redis://127.0.0.1:${RPORT}" npm run -s test:recebimento-idempotente
 run "Envios: anti-reenvio, provedor simulado (9)"        npm run -s test:envios-anti-reenvio
+run "Envios: fila do WhatsApp Web com o guard (6)"       npm run -s test:envios-whatsapp-web
+run "Envios: inventário dos caminhos de envio (6)"       npm run -s test:envios-inventario
+run "Dispatchers: contagem pelo código (3)"              npm run -s test:dispatchers-contagem
+run "Dispatchers: dois ao mesmo tempo (2)"               env REDIS_TEST_URL="redis://127.0.0.1:${RPORT}/7" npm run -s test:dispatchers-concorrentes
 run "Event Store: posse, BullMQ real, versões mistas, retry auditado (45)" npm run -s test:eventstore-validacao
 run "Worker de WhatsApp com o guard (vitest, 6)"         npx vitest run tests/unit/whatsappSendWorker.deliveryGuard.test.js
 
