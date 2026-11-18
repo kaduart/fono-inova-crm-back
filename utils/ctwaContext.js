@@ -117,20 +117,34 @@ export function extractCtwa(raw, msgData = null) {
  * Descreve a ESTRUTURA do ctwaContext sem valores (nem dado pessoal): tipo e tamanho de cada chave,
  * e as chaves de objetos aninhados até 3 níveis. Para o log único de diagnóstico.
  */
-export function describeCtwaShape(raw, depth = 0) {
+// Trechos de texto legível dentro de bytes (ex.: strings de um protobuf): só tamanhos e se o formato
+// parece um id de clique — nunca o conteúdo.
+function describeBytes(buf) {
+  const runs = (buf.toString('latin1').match(/[\x20-\x7e]{8,}/g) || []).slice(0, 12);
+  return {
+    bytes: buf.length,
+    textos: runs.map((r) => (/^[A-Za-z0-9_\-.]{20,}$/.test(r) ? `id(${r.length})` : `texto(${r.length})`)),
+  };
+}
+
+export function describeCtwaShape(raw, depth = 0, key = null) {
   if (raw == null) return null;
   const bytes = asBytes(raw);
-  if (bytes) return `bytes(${bytes.length})`;
+  if (bytes) return bytes.length ? describeBytes(bytes) : 'bytes(0)';
   if (typeof raw === 'string') {
     const json = parseJsonSafe(raw);
     if (json && depth < 3) return { json: describeCtwaShape(json, depth + 1) };
+    // conversionData/ctwaSignals lidos na página chegam em base64: descreve os bytes decodificados.
+    if ((key === 'conversionData' || key === 'ctwaSignals') && /^[A-Za-z0-9+/]+={0,2}$/.test(raw) && raw.length >= 8) {
+      return { base64: describeBytes(Buffer.from(raw, 'base64')) };
+    }
     return `string(${raw.length})`;
   }
   if (Array.isArray(raw)) return `array(${raw.length})`;
   if (isPlainObject(raw)) {
     if (depth >= 3) return `object(${Object.keys(raw).length} chaves)`;
     const out = {};
-    for (const [k, v] of Object.entries(raw)) out[k] = describeCtwaShape(v, depth + 1);
+    for (const [k, v] of Object.entries(raw)) out[k] = describeCtwaShape(v, depth + 1, k);
     return out;
   }
   return typeof raw;

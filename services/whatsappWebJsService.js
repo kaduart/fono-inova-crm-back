@@ -1012,6 +1012,41 @@ async function resolveRealPhoneFromLid(msg, lid) {
 }
 
 // Fire-and-forget: extrai origem (site/anúncio) da mensagem recebida e grava por telefone.
+// Converte, dentro da página, os campos binários do ctwaContext (conversionData / ctwaSignals) em base64.
+// Nunca lança: sem página, sem mensagem no Store ou sem bytes → {}.
+async function readCtwaBytesInPage(msg) {
+  try {
+    const page = msg?.client?.pupPage;
+    const id = msg?.id?._serialized;
+    if (!page || !id) return {};
+    const out = await page.evaluate((msgId) => {
+      const S = (() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })();
+      const m = S.Msg?.get?.(msgId);
+      const ctx = m?.ctwaContext;
+      if (!ctx) return null;
+      const toB64 = (v) => {
+        if (v == null) return null;
+        if (typeof v === 'string') return null; // texto já chega inteiro ao Node
+        let u8 = null;
+        if (v instanceof Uint8Array) u8 = v;
+        else if (v instanceof ArrayBuffer) u8 = new Uint8Array(v);
+        else if (ArrayBuffer.isView(v)) u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+        if (!u8 || !u8.length) return null;
+        let bin = '';
+        for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+        return btoa(bin);
+      };
+      return { conversionData: toB64(ctx.conversionData), ctwaSignals: toB64(ctx.ctwaSignals) };
+    }, id);
+    const res = {};
+    if (out?.conversionData) res.conversionData = out.conversionData;
+    if (out?.ctwaSignals) res.ctwaSignals = out.ctwaSignals;
+    return res;
+  } catch {
+    return {};
+  }
+}
+
 // Diagnóstico (18/11): loga UMA vez por processo a ESTRUTURA do ctwaContext (tipos e tamanhos, sem valores
 // nem dado pessoal), para confirmar onde o ctwa_clid vem. Desligar: WA_CTWA_SHAPE_LOG=false.
 let ctwaShapeLogged = false;
@@ -1041,11 +1076,14 @@ async function handleInboundAttribution(msg) {
   const { parseAttribution } = await import('../utils/attributionParser.js');
   // 18/11: o ctwa_clid não vem numa chave "ctwaClid"; extractCtwa procura em ctwaSignals/conversionData/externalAdReply.
   const { extractCtwa } = await import('../utils/ctwaContext.js');
-  const ctwa = extractCtwa(ctwaRaw, msg._data);
+  // 18/11 (log em prod): conversionData chega como {} — é binário e se perde na passagem página → Node.
+  // Lê os bytes DENTRO da página e traz em base64 (só quando há anúncio).
+  const ctwaFull = ctwaRaw ? { ...ctwaRaw, ...(await readCtwaBytesInPage(msg)) } : null;
+  const ctwa = extractCtwa(ctwaFull, msg._data);
   if (ctwaRaw) {
     console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','),
       `| anúncio=${ctwa?.sourceId ? 'sim' : 'não'} clid=${ctwa?.ctwaClid ? `sim (${ctwa.clidFrom})` : 'não'}`);
-    logCtwaShapeOnce(ctwaRaw, msg._data);
+    logCtwaShapeOnce(ctwaFull, msg._data);
   }
   if (!parseAttribution(text, ctwa)) return;
 

@@ -58,7 +58,17 @@ describe('describeCtwaShape', () => {
     const txt = JSON.stringify(shape);
     expect(txt).not.toContain(CLID);
     expect(txt).not.toContain('120');
-    expect(shape.conversionData).toBe('bytes(3)');
+    expect(shape.conversionData).toEqual({ bytes: 3, textos: [] });
     expect(shape.ctwaSignals).toEqual({ json: { ctwa_clid: `string(${CLID.length})` } });
+  });
+});
+
+describe('describeCtwaShape com bytes lidos na página (base64)', () => {
+  it('mostra tamanho e trechos legíveis sem o conteúdo', () => {
+    const CLID2 = 'ARAkLkA8rmlFeiCktEJQ-QTwRmyU9y4';
+    const proto = Buffer.concat([Buffer.from([0x0a, CLID2.length]), Buffer.from(CLID2), Buffer.from([0x12, 3, 1, 2, 3])]);
+    const shape = describeCtwaShape({ conversionData: proto.toString('base64'), ctwaSignals: 'abc' });
+    expect(JSON.stringify(shape)).not.toContain(CLID2);
+    expect(shape.conversionData).toEqual({ base64: { bytes: proto.length, textos: [`id(${CLID2.length})`] } });
   });
 });
