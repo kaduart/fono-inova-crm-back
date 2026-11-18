@@ -32,7 +32,7 @@ import Payment from '../models/Payment.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { NonRetryableError } from '../infrastructure/events/errorClassifier.js';
 
-export const OPERATION_KINDS = Object.freeze(['multi_payment', 'standalone', 'balance_credit']);
+export const OPERATION_KINDS = Object.freeze(['multi_payment', 'standalone', 'balance_credit', 'balance_credit_direct']);
 export const CONFLICT_CODE = 'IDEMPOTENCY_KEY_CONFLICT';
 export const DEBITS_NOT_PAYABLE_CODE = 'MULTI_PAYMENT_DEBITS_NOT_PAYABLE';
 
@@ -77,6 +77,12 @@ export function requestFingerprint(kind, p = {}) {
             amount: cents(p.amount),
             paymentMethod: p.paymentMethod || null
         };
+        // Só para create_sync: o agendamento e o status fazem parte da intenção.
+        // (Não muda a impressão dos tipos antigos: operações já gravadas seguem válidas.)
+        if (kind === 'create_sync') {
+            f.appointmentId = p.appointmentId ? String(p.appointmentId) : null;
+            f.status = p.status || null;
+        }
     }
     return crypto.createHash('sha256').update(JSON.stringify(f)).digest('hex');
 }

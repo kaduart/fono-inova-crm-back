@@ -42,7 +42,9 @@ import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { requireStaff } from '../middleware/requireRole.js';
-import { requestFingerprint } from '../services/paymentOperations.js';
+import { requestFingerprint, CONFLICT_CODE } from '../services/paymentOperations.js';
+import PaymentOperation from '../models/PaymentOperation.js';
+import { isTransactionConflict, IN_PROGRESS_CODE } from '../utils/txnConflict.js';
 
 // Idempotency-Key do cliente: torna o reenvio HTTP da MESMA intenção estável.
 const IDEMPOTENCY_HEADER_RE = /^[A-Za-z0-9._:-]{8,128}$/;
@@ -805,11 +807,76 @@ router.post('/create-sync', auth, requireStaff, async (req, res) => {
         );
     }
 
+    // 🛡️ IDEMPOTÊNCIA (rota paralela ao /request; ver docs/PAGAMENTOS_IDEMPOTENCIA.md §7)
+    // 1) Idempotency-Key do cliente: recibo em payment_operations gravado NA MESMA
+    //    transação do Payment e do ledger. Repetição devolve o mesmo Payment.
+    // 2) Sem chave, com appointmentId: um agendamento tem um Payment ativo. Se já
+    //    existe, devolve o existente (clique duplo/retentativa não cria outro).
+    // 3) Sem chave e sem agendamento: cada requisição é um lançamento (documentado).
+    const clientKey = req.get('Idempotency-Key');
+    if (clientKey !== undefined && !IDEMPOTENCY_HEADER_RE.test(clientKey)) {
+        return sendApiError(
+          res,
+          new AppError('INVALID_IDEMPOTENCY_KEY', 'Idempotency-Key deve ter 8 a 128 caracteres [A-Za-z0-9._:-]', { status: 400 }),
+          req
+        );
+    }
+    const operationKey = clientKey ? `payop:create_sync:create_sync_${patientId}_${clientKey}` : null;
+    const requestHash = operationKey
+        ? requestFingerprint('create_sync', { patientId, amount: Number(amount), paymentMethod, appointmentId, status })
+        : null;
+    const replayPayment = async (paymentId, extra = {}) => {
+        const existing = paymentId ? await Payment.findById(paymentId).lean() : null;
+        return res.status(200).json({
+            success: true,
+            data: existing,
+            idempotent: true,
+            ...extra,
+            message: 'Pagamento já registrado anteriormente (idempotência)'
+        });
+    };
+    const replayOperation = async (op) => {
+        if (op.requestHash !== requestHash) {
+            return sendApiError(
+              res,
+              new AppError(CONFLICT_CODE, 'Esta chave já foi usada para um pagamento com outro conteúdo', { status: 409 }),
+              req
+            );
+        }
+        PaymentOperation.updateOne({ _id: op._id }, { $inc: { replays: 1 } }).catch(() => {});
+        return replayPayment(op.paymentId);
+    };
+    const activeForAppointment = () => (appointmentId
+        ? Payment.findOne({
+            appointment: appointmentId,
+            status: { $nin: ['canceled', 'cancelled'] }
+        }).sort({ createdAt: 1 }).select('_id status').lean()
+        : null);
+
+    if (operationKey) {
+        const prior = await PaymentOperation.findById(operationKey).lean();
+        if (prior) return replayOperation(prior);
+    }
+    if (appointmentId) {
+        const existing = await activeForAppointment();
+        if (existing) return replayPayment(existing._id, { existingForAppointment: true });
+    }
+
     const mongoSession = await mongoose.startSession();
     await mongoSession.startTransaction();
 
     try {
         const now = new Date();
+        if (operationKey) {
+            await PaymentOperation.create([{
+                _id: operationKey,
+                kind: 'create_sync',
+                requestHash,
+                patient: patientId,
+                amount: Number(amount),
+                appliedAt: now
+            }], { session: mongoSession });
+        }
         // Converte paymentDate para startOf('day') em Brasília para alinhar com o range do cashflow
         // new Date('2026-06-03') = T00:00:00Z (UTC midnight) = 21h anterior em Brasília → cai fora do range
         const financialDateBrasilia = paymentDate
@@ -924,7 +991,18 @@ router.post('/create-sync', auth, requireStaff, async (req, res) => {
             }
         }
 
+        if (operationKey) {
+            await PaymentOperation.updateOne(
+                { _id: operationKey },
+                { $set: { paymentId: paymentDoc._id, result: { paymentId: String(paymentDoc._id) } } },
+                { session: mongoSession }
+            );
+        }
+
         await mongoSession.commitTransaction();
+        if (operationKey) {
+            PaymentOperation.updateOne({ _id: operationKey }, { $set: { sideEffectsAt: new Date() } }).catch(() => {});
+        }
 
         // 🔄 Atualiza PaymentsView (read-model)
         try {
@@ -944,6 +1022,23 @@ router.post('/create-sync', auth, requireStaff, async (req, res) => {
         });
     } catch (error) {
         await safeAbortTransaction(mongoSession);
+        // Corrida perdida: outra requisição da MESMA operação já gravou.
+        if (error?.code === 11000 && operationKey && String(error.message || '').includes('payment_operations')) {
+            const op = await PaymentOperation.findById(operationKey).lean();
+            if (op) return replayOperation(op);
+        }
+        if (error?.code === 11000 && appointmentId && String(error.message || '').includes('unique_active_payment_per_appt')) {
+            const existing = await activeForAppointment();
+            if (existing) return replayPayment(existing._id, { existingForAppointment: true });
+        }
+        if (isTransactionConflict(error)) {
+            logger.warn(`[V2 create-sync] Conflito com requisição simultânea; nada foi gravado por esta: ${error.message}`);
+            return sendApiError(
+              res,
+              new AppError(IN_PROGRESS_CODE, 'Outra requisição deste pagamento está em andamento. Repita em instantes.', { status: 409, extra: { retryable: true } }),
+              req
+            );
+        }
         logger.error(`[V2 create-sync] ❌ Erro: ${error.message}`);
         return sendApiError(
           res,
@@ -1464,6 +1559,16 @@ router.patch('/:id', auth, requireStaff, async (req, res) => {
 
     } catch (error) {
         await safeAbortTransaction(mongoSession);
+        if (isTransactionConflict(error)) {
+            // Duas edições simultâneas do mesmo Payment: o MongoDB abortou esta
+            // inteira (nada gravado). A outra seguiu; repetir mostra o estado final.
+            logger.warn(`[V2 PATCH ${id}] Conflito com edição simultânea; nada foi gravado por esta: ${error.message}`);
+            return sendApiError(
+              res,
+              new AppError(IN_PROGRESS_CODE, 'Este pagamento está sendo alterado por outra requisição. Repita em instantes.', { status: 409, extra: { retryable: true } }),
+              req
+            );
+        }
         logger.error(`[V2 PATCH ${id}] ❌ Erro: ${error.message}`);
         return sendApiError(
           res,
@@ -1795,15 +1900,22 @@ router.post('/bulk-settle', auth, requireStaff, async (req, res) => {
         }).session(mongoSession).lean();
 
         if (existingSettlement) {
+            // Repetição do MESMO fechamento (clique duplo, retentativa após
+            // timeout): devolve o recibo gravado, sem quitar nada de novo. Antes
+            // respondia 409 e a tela mostrava erro de algo que deu certo.
             await mongoSession.abortTransaction();
-            return sendApiError(
-              res,
-              new AppError('BULK_SETTLEMENT_ALREADY_EXISTS', 'Fechamento já realizado para essas sessões', {
-                status: 409,
-                extra: { data: { receiptId: existingSettlement._id } },
-              }),
-              req
-            );
+            return res.status(200).json({
+                success: true,
+                idempotent: true,
+                message: 'Fechamento já realizado para essas sessões (idempotência)',
+                code: 'BULK_SETTLEMENT_ALREADY_EXISTS',
+                data: {
+                    settledCount: existingSettlement.settledPaymentIds?.length ?? allRequestedPayments.length,
+                    totalSettled: existingSettlement.amount,
+                    paymentMethod: existingSettlement.paymentMethod,
+                    receiptId: existingSettlement._id
+                }
+            });
         }
 
         // Filtra apenas os pendentes para quitar
@@ -2106,10 +2218,20 @@ router.post('/bulk-settle', auth, requireStaff, async (req, res) => {
 
     } catch (error) {
         await safeAbortTransaction(mongoSession);
+        const isConflict = error.code === 'BULK_SETTLEMENT_CONFLICT' || isTransactionConflict(error);
+        if (isConflict) {
+            // Outra quitação simultânea mexeu nos mesmos Payments; esta foi
+            // abortada inteira. Repetir devolve o recibo (ver acima).
+            logger.warn('[V2 bulk-settle] Conflito com quitação simultânea; nada foi gravado por esta', { error: error.message });
+            return res.status(409).json({
+                success: false,
+                code: IN_PROGRESS_CODE,
+                retryable: true,
+                error: 'Outra quitação destas sessões está em andamento. Repita em instantes.'
+            });
+        }
         logger.error('[V2 bulk-settle] Erro:', error.message);
-        const isConflict = error.code === 'BULK_SETTLEMENT_CONFLICT'
-            || error?.errorLabels?.includes?.('TransientTransactionError');
-        res.status(isConflict ? 409 : 500).json({ success: false, error: error.message, code: error.code });
+        res.status(500).json({ success: false, error: error.message, code: error.code });
     } finally {
         mongoSession.endSession();
     }

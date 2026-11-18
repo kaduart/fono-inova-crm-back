@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ, getQueue } from '../infrastructure/queue/queueConfig.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
+import { runPaymentOperation, operationKeyFor, markSideEffectsDone } from '../services/paymentOperations.js';
 
 
 const processedEvents = new Map();
@@ -215,39 +216,66 @@ export async function handleDebit(payload, eventId) {
     return { status: 'success', eventId, patientId, amount };
 }
 
-async function handleCredit(payload, eventId) {
+// Crédito direto no saldo (POST /v2/balance/:patientId/credit).
+// Convenção (B-1): currentBalance > 0 = paciente deve; crédito REDUZ currentBalance
+// e soma em totalCredited, igual a PatientBalance.addCredit e às quitações.
+//
+// Idempotência: o crédito e o recibo em payment_operations são gravados na MESMA
+// transação; a chave é a idempotencyKey do evento (estável entre reenvios HTTP
+// quando o cliente manda Idempotency-Key) ou, em evento antigo sem ela, o eventId.
+// Reentrega do BullMQ, reinício do worker e dois workers com o mesmo evento
+// aplicam uma vez. O Map em memória acima é só atalho.
+export async function handleCredit(payload, eventId) {
     const { patientId, amount, description, requestedBy } = payload;
+    if (!patientId) throw new Error('INVALID_PAYLOAD: patientId ausente');
+    if (!amount || Number(amount) <= 0) throw new Error(`INVALID_PAYLOAD: amount inválido (${amount}) para crédito de ${patientId}`);
+    const value = Math.abs(Number(amount));
 
-    await PatientBalance.updateOne(
-        { patient: patientId },
-        {
-            $inc: {
-                currentBalance: -Math.abs(amount),
-                totalCredited: Math.abs(amount)
-            },
-            $push: {
-                transactions: {
-                    type: 'credit',
-                    amount: Math.abs(amount),
-                    description,
-                    registeredBy: requestedBy,
-                    transactionDate: new Date()
-                }
-            },
-            $set: { lastTransactionAt: new Date() }
-        },
-        { upsert: true }
-    );
-
-    console.log(`[BalanceWorker] Crédito: patient=${patientId}, amount=${amount}`);
-
-    await getQueue('patient-projection').add('rebuild', {
-        eventType: 'BALANCE_UPDATED',
-        payload: { patientId },
-        correlationId: eventId
+    const operationKey = operationKeyFor('balance_credit_direct', { idempotencyKey: payload.idempotencyKey, eventId });
+    const op = await runPaymentOperation({
+        operationKey,
+        kind: 'balance_credit_direct',
+        request: { patientId: String(patientId), amount: value, paymentMethod: null },
+        eventId,
+        apply: async ({ session, appliedAt }) => {
+            await PatientBalance.updateOne(
+                { patient: patientId },
+                {
+                    $inc: { currentBalance: -value, totalCredited: value },
+                    $push: {
+                        transactions: {
+                            type: 'credit',
+                            amount: value,
+                            description,
+                            registeredBy: requestedBy,
+                            operationKey,
+                            transactionDate: appliedAt
+                        }
+                    },
+                    $set: { lastTransactionAt: appliedAt }
+                },
+                { upsert: true, session }
+            );
+            return { result: { patientId: String(patientId), amount: value } };
+        }
     });
 
-    return { status: 'success', eventId, patientId, amount };
+    if (op.applied) {
+        console.log(`[BalanceWorker] Crédito: patient=${patientId}, amount=${value}, op=${operationKey}`);
+    } else {
+        console.log(`[BalanceWorker] Crédito já aplicado antes (reentrega): ${operationKey}`);
+    }
+
+    if (op.applied || op.sideEffectsPending) {
+        await getQueue('patient-projection').add('rebuild', {
+            eventType: 'BALANCE_UPDATED',
+            payload: { patientId },
+            correlationId: eventId
+        }, { jobId: `balance_projection_${operationKey}`.replace(/:/g, '_') });
+        await markSideEffectsDone(operationKey);
+    }
+
+    return { status: op.applied ? 'success' : 'already_processed', eventId, patientId, amount: value, operationKey };
 }
 
 async function handleLegacy(payload, eventId) {

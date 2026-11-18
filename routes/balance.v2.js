@@ -17,6 +17,11 @@ import { getPatientPendingPayments } from '../services/financialEngine.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { requireStaff } from '../middleware/requireRole.js';
+import EventStore from '../models/EventStore.js';
+import { requestFingerprint, CONFLICT_CODE } from '../services/paymentOperations.js';
+
+// Idempotency-Key do cliente (mesmo formato de /v2/payments/request).
+const IDEMPOTENCY_HEADER_RE = /^[A-Za-z0-9._:-]{8,128}$/;
 
 const router = express.Router();
 
@@ -299,7 +304,53 @@ router.post('/:patientId/credit', auth, requireStaff, async (req, res) => {
             );
         }
 
+        // 🛡️ IDEMPOTÊNCIA (ver docs/PAGAMENTOS_IDEMPOTENCIA.md §7)
+        // Antes: sem chave, o publicador gerava a chave `<paciente>_balance_credit`,
+        // igual para TODO crédito do paciente: depois do primeiro processado, os
+        // seguintes eram descartados como "duplicados" e a rota respondia 202
+        // "enfileirado" sem enfileirar. E o worker só lembrava do evento em memória:
+        // reentrega após reinício creditava de novo.
+        // Agora: com Idempotency-Key, a chave é estável entre reenvios; sem ela, é
+        // única por requisição. O worker grava o crédito com recibo em
+        // payment_operations (chave = idempotencyKey), na mesma transação.
+        const clientKey = req.get('Idempotency-Key');
+        if (clientKey !== undefined && !IDEMPOTENCY_HEADER_RE.test(clientKey)) {
+            return sendApiError(
+              res,
+              new AppError('INVALID_IDEMPOTENCY_KEY', 'Idempotency-Key deve ter 8 a 128 caracteres [A-Za-z0-9._:-]', { status: 400 }),
+              req
+            );
+        }
         const correlationId = `balance_credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const idempotencyKey = `balance_credit_${resolvedPatientId}_${clientKey || correlationId}`;
+        const fingerprint = (p) => requestFingerprint('balance_credit_direct', { patientId: String(p.patientId), amount: Number(p.amount), paymentMethod: null });
+        const existingResponse = (ev) => res.status(200).json({
+            success: true,
+            duplicated: true,
+            message: 'Crédito já foi enfileirado',
+            data: {
+                eventId: ev.eventId,
+                correlationId: ev.correlationId,
+                patientId: resolvedPatientId,
+                amount: ev.payload?.amount,
+                status: ev.status,
+                checkStatusUrl: `/api/v2/balance/status/${ev.eventId}`
+            }
+        });
+        if (clientKey) {
+            const existing = await EventStore.findOne({ idempotencyKey }).lean();
+            if (existing) {
+                if (fingerprint(existing.payload || {}) !== fingerprint({ patientId: resolvedPatientId, amount })) {
+                    return sendApiError(
+                      res,
+                      new AppError(CONFLICT_CODE, 'Esta chave já foi usada para um crédito com outro valor', { status: 409, extra: { eventId: existing.eventId } }),
+                      req
+                    );
+                }
+                return existingResponse(existing);
+            }
+        }
+
         const eventResult = await publishEvent(
             EventTypes.BALANCE_CREDIT_REQUESTED,
             {
@@ -307,11 +358,16 @@ router.post('/:patientId/credit', auth, requireStaff, async (req, res) => {
                 amount,
                 description,
                 type: 'credit',
+                idempotencyKey,
                 requestedBy: req.user?._id?.toString(),
                 requestedAt: new Date().toISOString()
             },
             {
                 correlationId,
+                idempotencyKey,
+                // Sem chave do cliente, o debounce por paciente segue como barreira
+                // contra o clique duplo de clientes antigos (mesmo padrão do /request).
+                debounce: !clientKey,
                 aggregateType: 'balance',
                 aggregateId: resolvedPatientId,
                 metadata: {
@@ -320,6 +376,18 @@ router.post('/:patientId/credit', auth, requireStaff, async (req, res) => {
                 }
             }
         );
+        if (eventResult.debounced) {
+            // Antes respondia 202 "enfileirado" sem enfileirar nada.
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_DEBOUNCED', 'Outro crédito deste paciente acabou de ser enviado. Confira o saldo e, se for outro crédito, envie de novo em alguns segundos.', { status: 409 }),
+              req
+            );
+        }
+        if (eventResult.duplicate) {
+            const existing = await EventStore.findOne({ idempotencyKey }).lean();
+            if (existing) return existingResponse(existing);
+        }
 
         console.log(`[BalanceV2] Crédito enfileirado: ${eventResult.eventId}`, {
             patientId: resolvedPatientId,

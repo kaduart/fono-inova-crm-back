@@ -56,6 +56,18 @@ export async function saveToOutbox(event, session = null) {
     createdAt: new Date()
   });
 
+  // Dentro de transação, um E11000 ABORTA a transação inteira no servidor: o
+  // catch abaixo nunca conseguia devolver o registro anterior e derrubava a
+  // operação do chamador ("Transaction ... has been aborted"). Com session,
+  // verifica antes de inserir.
+  if (session && event.eventId) {
+    const existing = await Outbox.findOne({ eventId }).session(session).lean();
+    if (existing) {
+      console.warn(`[Outbox] Evento duplicado ignorado: ${eventId} (${event.eventType})`);
+      return existing;
+    }
+  }
+
   try {
     await outboxEntry.save({ session });
     console.log(`[Outbox] Evento salvo: ${outboxEntry.eventId} (${outboxEntry.eventType})`);
