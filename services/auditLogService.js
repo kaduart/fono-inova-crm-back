@@ -14,6 +14,28 @@
 import mongoose from 'mongoose';
 import AuditLog from '../models/AuditLog.js';
 import { FeatureFlags } from '../config/featureFlags.js';
+import { sendAlert } from '../infrastructure/alerts/alertService.js';
+
+// Falhas de gravação de auditoria eram só um console.error que ninguém lia
+// (ver incidente 2026-09-18 abaixo). Agora: 1 nova tentativa para erro
+// transitório e alerta (com cooldown do alertService) quando o registro se perde.
+const AUDIT_RETRY_DELAY_MS = 200;
+const auditFailureStats = { failures: 0, retriedOk: 0, lastFailureAt: null };
+
+export function getAuditFailureStats() {
+  return { ...auditFailureStats };
+}
+
+export function isTransientAuditError(error) {
+  if (!error) return false;
+  if (typeof error.hasErrorLabel === 'function'
+    && (error.hasErrorLabel('RetryableWriteError') || error.hasErrorLabel('TransientTransactionError'))) {
+    return true;
+  }
+  return ['MongoNetworkError', 'MongoNetworkTimeoutError', 'MongoServerSelectionError',
+    'MongoNotConnectedError', 'MongoPoolClearedError'].includes(error.name);
+}
+
 
 const REFERENCE_FIELDS = new Set([
   'patient',
@@ -259,8 +281,17 @@ export async function recordAudit({
       metadata: metadata || null,
     });
 
-    await audit.save();
+    try {
+      await audit.save();
+    } catch (firstError) {
+      if (!isTransientAuditError(firstError)) throw firstError;
+      await new Promise((resolve) => setTimeout(resolve, AUDIT_RETRY_DELAY_MS));
+      await audit.save();
+      auditFailureStats.retriedOk += 1;
+    }
   } catch (error) {
+    auditFailureStats.failures += 1;
+    auditFailureStats.lastFailureAt = new Date().toISOString();
     // Fallback estruturado: garante visibilidade mesmo se o MongoDB falhar
     console.error('AUDIT_FAIL', JSON.stringify({
       action,
@@ -272,6 +303,24 @@ export async function recordAudit({
       error: error.message,
       stack: error.stack,
     }));
+    // Alerta sem before/after (podem ter dado pessoal): só o que identifica o registro perdido.
+    try {
+      await sendAlert({
+        level: 'critical',
+        type: 'audit_write_failed',
+        message: `Registro de auditoria perdido: ${action} em ${entityType}`,
+        details: {
+          action,
+          entityType,
+          entityId: entityId?.toString?.() || entityId || null,
+          correlationId: correlationId || null,
+          errorName: error.name,
+          failuresSinceBoot: auditFailureStats.failures,
+        },
+      });
+    } catch (alertError) {
+      console.error('AUDIT_FAIL_ALERT', alertError.message);
+    }
   }
 }
 
