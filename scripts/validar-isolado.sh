@@ -37,6 +37,7 @@ run() {
   echo "-> $st"
 }
 run "Dead-letters com auth (12)"                         npm run -s test:observability-auth
+run "Observabilidade: público mínimo, staff e admin (6)" env REDIS_URL="redis://127.0.0.1:${RPORT}" npm run -s test:observability-acesso
 run "Pagamentos: idempotência e atomicidade (15)"        npm run -s test:pagamentos-idempotencia
 run "Envios: anti-reenvio, provedor simulado (9)"        npm run -s test:envios-anti-reenvio
 run "Event Store: posse, BullMQ real, versões mistas, retry auditado (45)" npm run -s test:eventstore-validacao

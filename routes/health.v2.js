@@ -3,13 +3,21 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { getRedis } from '../services/redisClient.js';
+import { staffOnly, minimalHealthBody } from '../middleware/observabilityAccess.js';
 
 const router = express.Router();
 
 /**
  * GET /api/v2/health - Health check completo do sistema 4.0
  */
+// Público: só status e horário. Contagem das filas fica em /detalhes (com login).
 router.get('/', async (req, res) => {
+  let ok = mongoose.connection.readyState === 1;
+  try { await getRedis().ping(); } catch { ok = false; }
+  res.status(ok ? 200 : 503).json(minimalHealthBody(ok));
+});
+
+router.get('/detalhes', ...staffOnly, async (req, res) => {
   const checks = {
     mongodb: false,
     redis: false,

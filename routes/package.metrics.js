@@ -12,6 +12,7 @@
 import express from 'express';
 import { createContextLogger } from '../utils/logger.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
+import { staffOnly, adminOnly } from '../middleware/observabilityAccess.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageMetrics');
@@ -74,7 +75,7 @@ export function recordPackageMetric(metric) {
  * 📊 GET /api/metrics/packages
  * Dashboard de métricas para HeaderAdmin
  */
-router.get('/', async (req, res) => {
+router.get('/', ...staffOnly, async (req, res) => {
   try {
     const timeWindow = parseInt(req.query.window) || 3600000; // 1h default
     const stats = metricsStore.getStats(timeWindow);
@@ -140,7 +141,7 @@ router.get('/', async (req, res) => {
  * 📈 GET /api/metrics/packages/realtime
  * Dados em tempo real (últimos 10 requests)
  */
-router.get('/realtime', (req, res) => {
+router.get('/realtime', ...staffOnly, (req, res) => {
   const recent = metricsStore.requests.slice(-10);
   res.json({
     success: true,
@@ -155,7 +156,7 @@ router.get('/realtime', (req, res) => {
  * 🧪 POST /api/metrics/packages/record
  * Endpoint para testes - registra métrica manual
  */
-router.post('/record', (req, res) => {
+router.post('/record', ...adminOnly, (req, res) => {
   const { duration, transactionDuration, operations, error } = req.body;
   recordPackageMetric({
     duration: duration || 0,

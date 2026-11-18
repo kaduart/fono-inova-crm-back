@@ -37,7 +37,8 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 // 🔧 Configurações internas e serviços
 // ======================================================
 import { initializeSocket } from "./config/socket.js";
-import { startRuntimeMonitor, healthEndpoint, healthFullEndpoint } from "./infrastructure/observability/runtimeMonitor.js";
+import { startRuntimeMonitor, healthEndpoint, healthFullEndpoint, healthStatusOk } from "./infrastructure/observability/runtimeMonitor.js";
+import { staffOnly, adminOnly, bullBoardGuard, minimalHealthBody } from './middleware/observabilityAccess.js';
 import { attachMongoPoolDiagnostics, mongoPoolRequestMiddleware } from "./infrastructure/observability/mongoPoolDiagnostics.js";
 import Followup from "./models/Followup.js";
 import { redisConnection } from "./config/redisConnection.js";
@@ -375,8 +376,13 @@ app.use(
 app.options("*", cors(corsOptions));
 
 // 🚀 Health check imediato - responde antes de tudo
-app.get('/health', healthEndpoint);
-app.get('/health/full', healthFullEndpoint);
+// Público e mínimo (monitores externos). Detalhes de memória e filas só com login.
+app.get('/health', (req, res) => {
+  const ok = healthStatusOk();
+  res.status(ok ? 200 : 503).json(minimalHealthBody(ok));
+});
+app.get('/health/details', ...staffOnly, healthEndpoint);
+app.get('/health/full', ...staffOnly, healthFullEndpoint);
 
 // 🚀 NOVO: Health Check Completo (com watchdog, queues, stuck events)
 app.use('/api/health', healthRoutes);
@@ -532,7 +538,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/ads-feed', adsFeedRoutes);
 app.use('/api/convenio-waitlist', convenioWaitlistRoutes);
 app.use("/api/ai", aiRoutes);
-app.use('/api/diagnostic', diagnosticRouter);
+app.use('/api/diagnostic', diagnosticRouter);  // admin apenas (guarda no próprio router)
 app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
@@ -541,8 +547,8 @@ app.use('/api/financial/dashboard', financialDashboardRoutes);
 app.use('/api/v2/financial/audit', auth, authorize(['admin']), financialAuditV2Routes);  // 🔍 Auditoria V1 vs V2
 app.use('/api/internal/financial', financialReconciliationRoutes);  // 🔍 Reconciliação financeira por profissional
 app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
-app.use('/api/metrics', metricsDashboardRoutes);
-app.use('/api/metrics/packages', packageMetricsRoutes);  // 🚀 NOVO: Métricas Package V2
+app.use('/api/metrics', metricsDashboardRoutes);  // guardas por rota (POST /usage vale para todo usuário logado)
+app.use('/api/metrics/packages', packageMetricsRoutes);  // guardas por rota  // 🚀 NOVO: Métricas Package V2
 app.use('/api/planning', planningRoutes);
 // 🚨 LEGACY ROUTE ALERT — monitoramento de transição V1→V2
 function legacyRouteAlert(req, res, next) {
@@ -664,7 +670,8 @@ app.use(errorHandler);
 try {
   // basePath (adminSystem.js) e mount aqui têm que casar SEM barra final —
   // com barra nos dois causa loop de redirect infinito (ERR_TOO_MANY_REDIRECTS)
-  app.use("/admin/queues", bullBoardAdapter.getRouter());
+  // Admin apenas: o Bull Board mostra payloads dos jobs e permite repetir ou apagar jobs.
+  app.use("/admin/queues", bullBoardGuard, bullBoardAdapter.getRouter());
   console.log("🖥️ Bull Board disponível em: /admin/queues");
 } catch (err) {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message, err.stack);
