@@ -11,7 +11,6 @@
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../../../infrastructure/queue/queueConfig.js';
 import { 
-    eventExists, 
     processWithGuarantees, 
     appendEvent 
 } from '../../../infrastructure/events/eventStoreService.js';
@@ -116,71 +115,88 @@ async function updateInsuranceBatchView(batchId, correlationId, log) {
     }
 }
 
+const INSURANCE_WORKER_NAME = 'insuranceOrchestratorWorker';
+
+/**
+ * Processa um job da fila 'insurance-orchestrator'. Exportado para teste;
+ * o worker só o envolve. (O worker está desregistrado em workers/registry.js
+ * desde 2026-07-29; ver docs/EVENTSTORE_OWNERSHIP.md, D-1.)
+ */
+export async function processInsuranceJob(job) {
+    const { eventType, eventId, correlationId, idempotencyKey, payload } = job.data;
+    
+    const log = createContextLogger(correlationId || eventId, 'insurance');
+    
+    log.info('start', 'Processando evento de insurance', {
+        eventType,
+        eventId,
+        batchId: payload?.batchId
+    });
+
+    try {
+        // 🛡️ IDEMPOTÊNCIA VIA EVENT STORE
+        const existingEvent = await EventStore.findOne({ eventId });
+        if (existingEvent?.status === 'processed') {
+            log.info('idempotent', 'Evento já processado', { eventId });
+            return { status: 'already_processed', idempotent: true };
+        }
+
+        // 🛡️ IDEMPOTÊNCIA GLOBAL
+        // O índice de idempotencyKey NÃO é único (models/EventStore.js), então
+        // gravar de novo criaria um segundo evento e a reentrega rodaria em
+        // paralelo à execução original. Reaproveita o evento já gravado com a
+        // mesma chave: a posse dele decide (processed → ignora; posse viva →
+        // erro retentável; abandonado → retoma).
+        const existingByKey = idempotencyKey
+            ? await EventStore.findOne({ idempotencyKey }).sort({ createdAt: 1 }).lean()
+            : null;
+        if (existingByKey?.status === 'processed') {
+            log.info('idempotent', 'IdempotencyKey já processada', { idempotencyKey });
+            return { status: 'already_processed', idempotent: true };
+        }
+
+        // Registra evento no Event Store (só se ainda não existe)
+        const storedEvent = existingByKey || await appendEvent({
+            eventId,
+            eventType,
+            aggregateType: 'insurance_batch',
+            aggregateId: payload?.batchId || 'unknown',
+            payload,
+            metadata: { correlationId, idempotencyKey, source: 'insuranceOrchestratorWorker' },
+            idempotencyKey: idempotencyKey || `${eventType}_${payload?.batchId}_${Date.now()}`
+        });
+
+        // Processa com garantias
+        // D-1: passa o documento (não a string do eventId) para entrar no
+        // protocolo de posse; antes o eventId chegava undefined e o evento
+        // nunca saía de 'pending'.
+        return await processWithGuarantees(storedEvent, async () => {
+            return await handleInsuranceEvent(eventType, payload, { correlationId, log });
+        }, INSURANCE_WORKER_NAME);
+
+    } catch (error) {
+        log.error('error', 'Erro no processamento', { 
+            error: error.message,
+            eventType,
+            batchId: payload?.batchId
+        });
+        
+        if (job.attemptsMade >= 4) {
+            await moveToDLQ(job, error);
+        }
+        
+        throw error;
+    }
+
+}
+
 /**
  * Inicia o worker de orquestração de convênios
  */
 export function startInsuranceOrchestratorWorker() {
     console.log('[InsuranceOrchestrator] 🏥 Worker iniciado');
 
-    const worker = new Worker('insurance-orchestrator', async (job) => {
-        const { eventType, eventId, correlationId, idempotencyKey, payload } = job.data;
-        
-        const log = createContextLogger(correlationId || eventId, 'insurance');
-        
-        log.info('start', 'Processando evento de insurance', {
-            eventType,
-            eventId,
-            batchId: payload?.batchId
-        });
-
-        try {
-            // 🛡️ IDEMPOTÊNCIA VIA EVENT STORE
-            const existingEvent = await EventStore.findOne({ eventId });
-            if (existingEvent?.status === 'processed') {
-                log.info('idempotent', 'Evento já processado', { eventId });
-                return { status: 'already_processed', idempotent: true };
-            }
-
-            // 🛡️ IDEMPOTÊNCIA GLOBAL
-            if (idempotencyKey && await eventExists(idempotencyKey)) {
-                const existingByKey = await EventStore.findOne({ idempotencyKey });
-                if (existingByKey?.status === 'processed') {
-                    log.info('idempotent', 'IdempotencyKey já processada', { idempotencyKey });
-                    return { status: 'already_processed', idempotent: true };
-                }
-            }
-
-            // Registra evento no Event Store
-            const storedEvent = await appendEvent({
-                eventId,
-                eventType,
-                aggregateType: 'insurance_batch',
-                aggregateId: payload?.batchId || 'unknown',
-                payload,
-                metadata: { correlationId, idempotencyKey, source: 'insuranceOrchestratorWorker' },
-                idempotencyKey: idempotencyKey || `${eventType}_${payload?.batchId}_${Date.now()}`
-            });
-
-            // Processa com garantias
-            return await processWithGuarantees(storedEvent.eventId, async () => {
-                return await handleInsuranceEvent(eventType, payload, { correlationId, log });
-            });
-
-        } catch (error) {
-            log.error('error', 'Erro no processamento', { 
-                error: error.message,
-                eventType,
-                batchId: payload?.batchId
-            });
-            
-            if (job.attemptsMade >= 4) {
-                await moveToDLQ(job, error);
-            }
-            
-            throw error;
-        }
-
-    }, {
+    const worker = new Worker('insurance-orchestrator', processInsuranceJob, {
         connection: redisConnection,
         concurrency: 3,
         limiter: {

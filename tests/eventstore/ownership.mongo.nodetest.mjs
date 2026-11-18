@@ -324,3 +324,67 @@ test('evento fora do Event Store: caminho legado sem posse, sem quebrar', { skip
   const r = await processWithGuarantees({ eventId: 'idem-key-que-nao-e-evento' }, async () => 'ok', 'w');
   assert.deepEqual(r, { success: true, result: 'ok' });
 });
+
+// ---------- D-1: worker de convênio no protocolo de posse ----------
+const { processInsuranceJob } = await import('../../domains/billing/workers/insuranceOrchestratorWorker.js');
+const insuranceJob = (data) => ({ data: { eventType: 'TIPO_FICTICIO_SEM_HANDLER', correlationId: 'corr-ficticio', payload: { batchId: 'lote-ficticio' }, ...data }, attemptsMade: 0 });
+
+test('D-1: job de convênio reivindica, conclui e libera a posse do evento gravado', { skip }, async () => {
+  const key = newId('conv');
+  const r = await processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key }));
+  assert.equal(r.success, true);
+  assert.equal(r.ownership, undefined, 'passou pelo caminho com posse');
+  const doc = await EventStore.findOne({ idempotencyKey: key }).lean();
+  assert.equal(doc.status, 'processed', 'antes do D-1 o evento ficava pending para sempre');
+  assert.equal(doc.processedBy, 'insuranceOrchestratorWorker');
+  assert.equal(doc.processingToken, undefined);
+  assert.equal(doc.leaseExpiresAt, undefined);
+});
+
+test('D-1: reentrega do mesmo job (mesma idempotencyKey) não reprocessa', { skip }, async () => {
+  const key = newId('conv');
+  await processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key }));
+  const again = await processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key }));
+  assert.equal(again.status, 'already_processed');
+  assert.equal(await EventStore.countDocuments({ idempotencyKey: key }), 1);
+});
+
+test('D-1: reentrega com posse viva de outra execução recebe erro retentável', { skip }, async () => {
+  const key = newId('conv');
+  const id = await seed({ idempotencyKey: key, aggregateType: 'insurance_batch' });
+  const other = await claimEvent(id, 'outraExecucao', { leaseMs: 5000 });
+  assert.equal(other.status, 'claimed');
+  await assert.rejects(processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key })), { code: 'EVENT_BUSY' });
+  const doc = await get(id);
+  assert.equal(doc.processingToken, other.token, 'a posse da outra execução continua intacta');
+});
+
+test('D-1: reentrega depois de execução abandonada retoma o mesmo evento', { skip }, async () => {
+  const key = newId('conv');
+  const id = await seed({ idempotencyKey: key, aggregateType: 'insurance_batch' });
+  await claimEvent(id, 'execucaoQueMorreu', { leaseMs: 1 });
+  await sleep(20);
+  const r = await processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key }));
+  assert.equal(r.success, true);
+  assert.equal(await EventStore.countDocuments({ idempotencyKey: key }), 1, 'não cria um segundo evento');
+  assert.equal((await get(id)).status, 'processed');
+});
+
+test('processWithGuarantees aceita a string do eventId (contrato antigo)', { skip }, async () => {
+  const id = await seed();
+  const r = await processWithGuarantees(id, async () => 'ok', 'w-string', { leaseMs: 5000 });
+  assert.equal(r.success, true);
+  assert.equal((await get(id)).status, 'processed');
+});
+
+test('sem eventId: processa sem posse e não escreve em nenhum documento', { skip }, async () => {
+  await EventStore.collection.insertOne({ eventType: 'SEM_ID', aggregateType: 'x', aggregateId: 'x', payload: {}, status: 'pending', attempts: 0, createdAt: new Date() });
+  const id = await seed();
+  let ran = false;
+  const r = await processWithGuarantees(undefined, async () => { ran = true; return 'ok'; }, 'w-sem-id');
+  assert.equal(ran, true);
+  assert.equal(r.ownership, 'none');
+  assert.equal(await EventStore.countDocuments({ status: { $ne: 'pending' } }), 0, 'nenhum documento mudou');
+  await assert.rejects(processWithGuarantees({ eventId: '' }, async () => { throw new Error('falha-ficticia'); }, 'w'), /falha-ficticia/);
+  assert.equal((await get(id)).status, 'pending');
+});

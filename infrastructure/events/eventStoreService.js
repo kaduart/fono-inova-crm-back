@@ -449,10 +449,17 @@ export async function cleanupOldEvents(olderThanDays = 365) {
  * @param {string} workerName - Nome do worker
  */
 export async function processWithGuarantees(event, processor, workerName, options = {}) {
-  // Comportamento preservado: chamadores que passam só a string do eventId
-  // (insuranceOrchestratorWorker) caem em eventId undefined, como antes.
-  // Registrado em docs/EVENTSTORE_OWNERSHIP.md (D-1), não corrigido aqui.
-  const { eventId } = event;
+  // D-1: aceita a string do eventId (contrato antigo do insuranceOrchestratorWorker).
+  if (typeof event === 'string') event = { eventId: event };
+  const eventId = event?.eventId;
+  if (typeof eventId !== 'string' || eventId === '') {
+    // Exclusão explícita e segura: sem eventId não há registro a reivindicar
+    // nem a marcar. Nenhuma escrita no Event Store (antes, a escrita com
+    // eventId undefined virava filtro {eventId: null}).
+    log.warn('event_without_id', 'Execução sem eventId: processada sem posse e sem registro no Event Store', { workerName });
+    const result = await processor(event, { signal: undefined, token: undefined, eventId: undefined });
+    return { success: true, result, ownership: 'none' };
+  }
   const leaseMs = options.leaseMs ?? leaseMsFromEnv();
   const owner = workerName || 'unknown';
 
