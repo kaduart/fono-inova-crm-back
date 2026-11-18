@@ -52,6 +52,16 @@ export function stuckFilter(now) {
   };
 }
 
+/**
+ * Condição exata sobre o valor observado: ausente → $exists:false;
+ * null → $type:'null' (null sozinho também casaria ausente); senão $eq bruto.
+ */
+export function observed(event, field) {
+  if (!(field in event) || event[field] === undefined) return { $exists: false };
+  if (event[field] === null) return { $type: 'null' };
+  return { $eq: event[field] };
+}
+
 /** Decisão para um evento observado. */
 export function decide(event, maxRecoveries = MAX_RECOVERIES) {
   const recoveries = (Number(event.recoveryCount) || 0) + 1;
@@ -96,11 +106,13 @@ export async function reapStuckEvents({ now = new Date(), alert = sendAlert, max
             const filter = {
                 eventId: event.eventId,
                 status: 'processing',
-                processingToken: event.processingToken ?? { $exists: false },
-                leaseExpiresAt: event.leaseExpiresAt ?? { $exists: false },
-                recoveryCount: event.recoveryCount ?? { $exists: false }
+                processingToken: observed(event, 'processingToken'),
+                leaseExpiresAt: observed(event, 'leaseExpiresAt'),
+                recoveryCount: observed(event, 'recoveryCount')
             };
-            const r = await EventStore.updateOne(filter, {
+            // Driver direto (sem cast do Mongoose): o filtro compara o valor
+            // bruto observado, inclusive tipos inesperados gravados por código antigo.
+            const r = await EventStore.collection.updateOne(filter, {
                 $set: { status: d.to, recoveryCount: d.recoveries, error: { message: d.message, code: d.exhausted ? 'RECOVERY_LIMIT_EXCEEDED' : 'RECOVERED_STUCK_PROCESSING' } },
                 $unset: { processingToken: '', processingOwner: '', leaseExpiresAt: '' }
             });

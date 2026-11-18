@@ -15,7 +15,7 @@ import {
 import {
   processWithGuarantees, markEventProcessed, MAX_FAILED_ATTEMPTS
 } from '../../infrastructure/events/eventStoreService.js';
-import { reapStuckEvents, MAX_RECOVERIES } from '../../crons/eventReaper.cron.js';
+import { reapStuckEvents, MAX_RECOVERIES, observed } from '../../crons/eventReaper.cron.js';
 import { resolveEventReaperOwner } from '../../config/cronManager.js';
 
 const URI = process.env.MONGO_TEST_URI;
@@ -178,6 +178,49 @@ test('conclusão simultânea ao reaper: nunca as duas coisas', { skip }, async (
   const recovered = reap.reset + reap.failed + reap.deadLetter;
   assert.equal(recovered + completed, n);
   assert.equal(reap.total, recovered + reap.lostRace);
+});
+
+test('renovação entre a leitura e a escrita do reaper: nada é gravado', { skip }, async () => {
+  // Injeção determinística: a renovação acontece exatamente depois da leitura
+  // do reaper e antes da sua escrita condicional.
+  const id = await seed();
+  const c = await claimEvent(id, 'workerLento', { leaseMs: 1 });
+  await sleep(20); // posse vencida: o reaper vai selecionar o evento
+  const coll = EventStore.collection;
+  const original = coll.updateOne;
+  coll.updateOne = async function (...args) {
+    coll.updateOne = original;
+    assert.equal(await renewLease(id, c.token, { leaseMs: 5000 }), true, 'o dono ainda renova uma posse vencida não retomada');
+    return original.apply(this, args);
+  };
+  try {
+    const r = await reapStuckEvents();
+    assert.equal(r.total, 1);
+    assert.equal(r.lostRace, 1);
+    assert.equal(r.reset + r.failed + r.deadLetter, 0);
+  } finally {
+    coll.updateOne = original;
+  }
+  const doc = await get(id);
+  assert.equal(doc.status, 'processing');
+  assert.equal(doc.processingToken, c.token);
+  assert.equal(doc.recoveryCount, undefined);
+  assert.equal(await completeOwned(id, c.token, 'workerLento'), true, 'o dono segue dono e conclui');
+});
+
+test('filtro condicional usa o valor bruto observado (ausente, null, tipo inesperado)', { skip }, async () => {
+  assert.deepEqual(observed({}, 'x'), { $exists: false });
+  assert.deepEqual(observed({ x: null }, 'x'), { $type: 'null' });
+  assert.deepEqual(observed({ x: '2' }, 'x'), { $eq: '2' });
+  // recoveryCount gravado como texto por código antigo: o cast do Mongoose
+  // faria o filtro nunca casar e o evento ficaria em processing para sempre.
+  const id = await seed({ status: 'processing', recoveryCount: '1', processingToken: null, createdAt: new Date(Date.now() - 20 * 60 * 1000) });
+  const r = await reapStuckEvents({ alert: async () => {} });
+  assert.equal(r.lostRace, 0);
+  assert.equal(r.reset, 1);
+  const doc = await get(id);
+  assert.equal(doc.status, 'pending');
+  assert.equal(doc.recoveryCount, 2);
 });
 
 test('reinício: execução abandonada é retomada pelo reaper e reprocessada', { skip }, async () => {
