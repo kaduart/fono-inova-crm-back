@@ -17,6 +17,15 @@ import { withLock } from '../utils/redisLock.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
+import { recordPaymentReceived } from '../services/financialLedgerService.js';
+import {
+    operationKeyFor,
+    runPaymentOperation,
+    markSideEffectsDone,
+    applyStandalone,
+    applyBalanceCredit,
+    applyMultiPayment
+} from '../services/paymentOperations.js';
 
 /**
  * Payment Worker - Processa pagamentos com Saga Pattern
@@ -92,7 +101,7 @@ export function startPaymentWorker() {
                     if (eventType === EventTypes.PAYMENT_REQUESTED) {
                         return await handlePaymentRequested(payload, eventId, correlationId, log);
                     } else if (eventType === EventTypes.PAYMENT_PROCESS_REQUESTED) {
-                        return await handlePaymentProcessRequested(payload, eventId, correlationId, log);
+                        return await handlePaymentProcessRequested(payload, eventId, correlationId, log, { idempotencyKey: job.data.idempotencyKey || null });
                     } else if (eventType === EventTypes.PAYMENT_COMPLETED) {
                         return await handlePaymentConfirmed(payload, eventId, correlationId, log);
                     }
@@ -315,23 +324,9 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
  * 2. appointment_payment: atualiza Payment existente do appointment
  * 3. standalone: cria Payment avulso (sem appointment)
  */
-async function handlePaymentProcessRequested(payload, eventId, correlationId, log) {
-    const {
-        type,           // 🎯 SEMPRE presente (validado pela API)
-        patientId,      // 🎯 SEMPRE presente
-        appointmentId,  // null para pagamentos avulsos
-        amount,         // 🎯 SEMPRE presente e > 0
-        paymentMethod = 'cash',
-        notes,
-        payments,
-        debitIds,
-        totalAmount,
-        requestedBy,
-        isMultiPayment,
-        source          // 'v2_api', 'v2_api_multi', etc
-    } = payload;
-    
-    // 🚀 Log de entrada simplificado (payload já é confiável)
+async function handlePaymentProcessRequested(payload, eventId, correlationId, log, ctx = {}) {
+    const { type, patientId, appointmentId, amount, paymentMethod, source } = payload;
+
     log.info('payment_process_started', `Processando ${type}`, {
         patientId,
         appointmentId,
@@ -340,454 +335,171 @@ async function handlePaymentProcessRequested(payload, eventId, correlationId, lo
         source: source || 'unknown'
     });
 
-    // ========================================
-    // 🎯 ROUTING POR TYPE (payload validado)
-    // ========================================
-    
     switch (type) {
         case 'multi_payment':
-            // 🔒 LOCK: Evita race condition em payment-multi do mesmo paciente
+            // O lock reduz disputa; a garantia vem do PaymentOperation na transação.
             return await withLock(`payment-multi:${patientId}`, async () => {
-                return await processMultiPayment(payload, eventId, correlationId, log);
+                return await processMultiPayment(payload, eventId, correlationId, log, ctx);
             }, { ttl: 60 });
-            
+
         case 'appointment_payment':
-            // Pagamento vinculado a um agendamento
             return await processSinglePayment(payload, eventId, correlationId, log);
-            
+
         case 'standalone':
-            // Pagamento avulso (sem agendamento)
             log.info('standalone_payment', 'Processando pagamento avulso', { patientId, amount });
-            return await processStandalonePayment(payload, eventId, correlationId, log);
-            
+            return await processStandalonePayment(payload, eventId, correlationId, log, ctx);
+
         case 'balance_credit':
-            // Crédito em conta do paciente
             log.info('balance_credit', 'Processando crédito em conta', { patientId, amount });
-            return await processBalanceCredit(payload, eventId, correlationId, log);
-            
+            return await processBalanceCredit(payload, eventId, correlationId, log, ctx);
+
         default:
-            // 🚨 Isso NUNCA deve acontecer (API valida type)
             log.error('invalid_type', 'Tipo inválido recebido - falha na validação da API', { type });
             throw new Error(`INVALID_TYPE: ${type}. Falha na validação da API.`);
     }
 }
 
 /**
- * Processa pagamento avulso (sem appointment)
+ * Efeitos depois do commit: pelo menos uma vez. Na reentrega de uma operação
+ * já aplicada, só rodam se sideEffectsAt ainda estiver vazio. Os eventos levam
+ * idempotencyKey derivada da operação para o publisher descartar repetição.
  */
-async function processStandalonePayment(payload, eventId, correlationId, log) {
-    const { patientId, amount, paymentMethod, notes, requestedBy } = payload;
-    
-    const payment = new Payment({
-        patient: patientId,  // 🎯 Schema espera 'patient', não 'patientId'
-        patientId: patientId,
-        amount,
-        paymentMethod,
-        paymentDate: new Date(),
-        financialDate: new Date(), // 🎯 Fonte única de verdade
-        status: 'paid',
-        paidAt: new Date(),
-        billingType: 'particular', // 🎯 Campo obrigatório para dashboard
-        source: 'manual',
-        description: notes || 'Pagamento avulso'
-    });
-    
-    await payment.save();
-    
-    log.info('standalone_payment_created', `Pagamento avulso criado: ${payment._id}`, {
-        paymentId: payment._id,
-        patientId,
-        amount
-    });
+async function runPostCommitEffects({ kind, op, correlationId, log, completedPayload, reason, notification }) {
+    const key = op.operationKey;
 
-    // 💰 ATUALIZA PATIENTBALANCE (crédito em conta)
-    try {
-        const PatientBalance = (await import('../models/PatientBalance.js')).default;
-        
-        // Busca ou cria o balance do paciente
-        let balance = await PatientBalance.findOne({ patient: patientId });
-        if (!balance) {
-            balance = new PatientBalance({ patient: patientId, currentBalance: 0, transactions: [] });
+    if (op.paymentId) {
+        try {
+            const { handlePaymentEvent } = await import('../projections/paymentsProjection.js');
+            await handlePaymentEvent({
+                type: 'PAYMENT_CREATED',
+                payload: { paymentId: String(op.paymentId) },
+                timestamp: new Date()
+            });
+        } catch (projError) {
+            log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
         }
-        
-        // Usa o método do schema que já lida corretamente com o subdocumento
-        await balance.addCredit(amount, notes || 'Crédito de pagamento avulso', requestedBy || null);
-        
-        log.info('balance_credit_applied', `Crédito de ${amount} aplicado para ${patientId} (standalone)`);
-    } catch (balanceError) {
-        log.error('balance_error', 'Erro ao atualizar PatientBalance (não-fatal)', { error: balanceError.message });
     }
 
-    // 🏦 REGISTRA NO LEDGER (caixa) - standalone também é entrada de caixa
-    try {
-        const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
-        await recordPaymentReceived(payment, { correlationId });
-        log.info('ledger_recorded', `Lançamento contábil registrado (standalone): ${amount}`);
-    } catch (ledgerError) {
-        log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
-    }
-
-    // 🔄 ATUALIZA PROJECTIONS (Financial)
-    try {
-        const { default: FinancialProjectionHandler } = await import('../projections/financialProjection.js');
-        await FinancialProjectionHandler.updateCash({
-            amount: payment.amount,
-            billingType: 'particular',
-            paymentMethod: payment.paymentMethod,
-            paymentId: payment._id.toString()
-        });
-        log.info('projection_updated', 'Financial projection atualizada (standalone)');
-    } catch (projError) {
-        log.error('projection_error', 'Erro ao atualizar projection', { error: projError.message });
-    }
-
-    // 🔄 ATUALIZA PAYMENTSVIEW (projection para tela de pagamentos)
-    try {
-        const { handlePaymentEvent } = await import('../projections/paymentsProjection.js');
-        await handlePaymentEvent({
-            type: 'PAYMENT_CREATED',
-            payload: { paymentId: payment._id.toString() },
-            timestamp: new Date()
-        });
-        log.info('payment_projection_updated', `PaymentsView atualizada para ${payment._id}`);
-    } catch (projError) {
-        log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
-    }
-
-    // 🔄 INVALIDA CACHE FINANCEIRO
     invalidateFinancialCaches();
 
-    // 📊 Solicita recálculo de totais e daily closing
-    try {
-        await publishEvent(
-            EventTypes.TOTALS_RECALCULATE_REQUESTED,
-            {
-                clinicId: null,
-                date: new Date().toISOString().split('T')[0],
-                period: 'month',
-                reason: 'payment_standalone_completed',
-                triggeredBy: 'payment_worker'
-            },
-            { correlationId }
-        );
-
-        const paymentDate = new Date().toISOString().split('T')[0];
-        await publishEvent(
-            EventTypes.DAILY_CLOSING_REQUESTED,
-            {
-                clinicId: 'default',
-                date: paymentDate,
-                reason: 'payment_standalone_completed',
-                triggeredBy: 'payment_worker'
-            },
-            { correlationId }
-        );
-    } catch (recalcError) {
-        log.error('recalc_error', 'Erro ao publicar recálculos (não-fatal)', { error: recalcError.message });
+    if (completedPayload) {
+        await publishEvent(EventTypes.PAYMENT_COMPLETED, completedPayload, {
+            correlationId,
+            idempotencyKey: `${key}:completed`
+        });
+        const day = new Date().toISOString().split('T')[0];
+        await publishEvent(EventTypes.TOTALS_RECALCULATE_REQUESTED, {
+            clinicId: null, date: day, period: 'month', reason, triggeredBy: 'payment_worker'
+        }, { correlationId, idempotencyKey: `${key}:totals` });
+        await publishEvent(EventTypes.DAILY_CLOSING_REQUESTED, {
+            clinicId: 'default', date: day, reason, triggeredBy: 'payment_worker'
+        }, { correlationId, idempotencyKey: `${key}:daily_closing` });
     }
-    
-    // Publica evento
-    await publishEvent(
-        EventTypes.PAYMENT_COMPLETED,
-        {
-            paymentId: payment._id.toString(),
-            patientId: patientId.toString(),
-            amount,
-            billingType: 'particular',
-            type: 'standalone',
-            paymentMethod
-        },
-        { correlationId }
-    );
-    
-    return {
-        status: 'standalone_payment_completed',
-        paymentId: payment._id,
-        patientId,
-        amount
-    };
+
+    if (notification) {
+        await publishEvent(EventTypes.NOTIFICATION_REQUESTED, notification, {
+            correlationId,
+            idempotencyKey: `${key}:notification`
+        });
+    }
+
+    await markSideEffectsDone(key);
+    log.info('payment_side_effects_done', `Efeitos pós-commit concluídos (${kind})`, { operationKey: key, replayed: op.replayed });
 }
 
 /**
- * Processa crédito em conta do paciente
+ * Pagamento avulso. Payment + crédito no saldo + ledger numa transação,
+ * uma vez por operationKey.
  */
-async function processBalanceCredit(payload, eventId, correlationId, log) {
-    const { patientId, amount, paymentMethod, notes, requestedBy } = payload;
-    
-    const PatientBalance = (await import('../models/PatientBalance.js')).default;
-    
-    // Atualiza ou cria saldo do paciente
-    await PatientBalance.findOneAndUpdate(
-        { patient: patientId },
-        {
-            $inc: { currentBalance: amount },
-            $push: {
-                transactions: {
-                    type: 'credit',
-                    amount,
-                    description: notes || 'Crédito em conta',
-                    paymentMethod,
-                    registeredBy: requestedBy,
-                    createdAt: new Date()
-                }
+async function processStandalonePayment(payload, eventId, correlationId, log, ctx = {}) {
+    const { patientId, amount, paymentMethod } = payload;
+    const operationKey = operationKeyFor('standalone', { idempotencyKey: ctx.idempotencyKey, eventId });
+
+    const op = await runPaymentOperation({
+        operationKey,
+        kind: 'standalone',
+        request: payload,
+        eventId,
+        log,
+        apply: (txCtx) => applyStandalone(payload, txCtx, { correlationId, recordLedger: recordPaymentReceived })
+    });
+
+    if (op.applied || op.sideEffectsPending) {
+        await runPostCommitEffects({
+            kind: 'standalone',
+            op,
+            correlationId,
+            log,
+            reason: 'payment_standalone_completed',
+            completedPayload: {
+                paymentId: String(op.paymentId),
+                patientId: String(patientId),
+                amount,
+                billingType: 'particular',
+                type: 'standalone',
+                paymentMethod
             }
-        },
-        { upsert: true, new: true }
-    );
-    
-    log.info('balance_credit_applied', `Crédito de ${amount} aplicado para ${patientId}`);
-    
-    return {
-        status: 'balance_credit_completed',
-        patientId,
-        amount
-    };
+        });
+    }
+
+    return { ...(op.result || {}), replayed: op.replayed, operationKey };
 }
 
-async function processMultiPayment(payload, eventId, correlationId, log) {
-    const {
-        type,           // 'multi_payment' - validado pela API
-        patientId,      // validado pela API
-        payments,       // validado pela API
-        debitIds,       // validado pela API
-        totalAmount,    // validado pela API
-        requestedBy
-    } = payload;
+/**
+ * Crédito em conta. Lançamento no saldo uma vez por operationKey.
+ */
+async function processBalanceCredit(payload, eventId, correlationId, log, ctx = {}) {
+    const operationKey = operationKeyFor('balance_credit', { idempotencyKey: ctx.idempotencyKey, eventId });
 
-    // 🛡️ FLOW GUARD: payment-worker só processa particular
+    const op = await runPaymentOperation({
+        operationKey,
+        kind: 'balance_credit',
+        request: payload,
+        eventId,
+        log,
+        apply: (txCtx) => applyBalanceCredit(payload, txCtx)
+    });
+
+    if (op.applied || op.sideEffectsPending) {
+        await runPostCommitEffects({ kind: 'balance_credit', op, correlationId, log });
+    }
+
+    log.info('balance_credit_applied', `Crédito de ${payload.amount} para ${payload.patientId}`, { replayed: op.replayed });
+    return { ...(op.result || {}), replayed: op.replayed, operationKey };
+}
+
+/**
+ * Pagamento múltiplo. Payment consolidado + quitação dos débitos + saldo +
+ * agendamentos + ledger numa transação, uma vez por operationKey.
+ */
+async function processMultiPayment(payload, eventId, correlationId, log, ctx = {}) {
+    const { patientId, payments, debitIds, totalAmount } = payload;
+
     const rawMethod = payments[0]?.paymentMethod || 'cash';
     if (['convenio', 'liminar_credit'].includes(rawMethod)) {
         throw new Error(`PAYMENT_FLOW_BLOCKED: paymentWorker não processa billingType='${rawMethod}'. Use fluxo correto.`);
     }
 
-    // 🚀 Log simplificado (payload confiável)
     log.info('multi_payment_processing', `Processando ${debitIds.length} débitos`, {
         patientId,
         totalAmount,
         paymentCount: payments.length
     });
 
-    const mongoSession = await mongoose.startSession();
-    
+    const operationKey = operationKeyFor('multi_payment', { idempotencyKey: ctx.idempotencyKey, eventId });
+
+    let op;
     try {
-        await mongoSession.startTransaction();
-
-        const now = new Date();
-        const results = {
-            paymentsCreated: [],
-            debitsMarked: [],
-            appointmentsUpdated: [],
-            errors: []
-        };
-
-        // 1. Cria o Payment principal (consolidado)
-        // Mapear método de pagamento do array payments
-        const rawMethod = payments[0]?.paymentMethod || 'cash';
-        const methodMap = {
-            'dinheiro': 'cash', 'pix': 'pix', 'credit_card': 'credit_card', 'debit_card': 'debit_card',
-            'cartao': 'credit_card', 'cartão': 'credit_card', 'transferencia': 'bank_transfer', 'transferência': 'bank_transfer'
-        };
-        const mappedMethod = methodMap[rawMethod] || rawMethod;
-        
-        const mainPayment = new Payment({
-            patient: patientId,
-            patientId: patientId,
-            amount: totalAmount,
-            paymentMethod: mappedMethod,
-            paymentDate: now,
-            financialDate: now, // 🎯 Fonte única de verdade
-            status: 'paid',
-            source: 'manual',
-            description: `Pagamento múltiplo: ${debitIds.length} débito(s) - Total: R$ ${totalAmount}`
+        op = await runPaymentOperation({
+            operationKey,
+            kind: 'multi_payment',
+            request: payload,
+            eventId,
+            log,
+            apply: (txCtx) => applyMultiPayment(payload, txCtx, { correlationId, recordLedger: recordPaymentReceived, Appointment })
         });
-
-        await mainPayment.save({ session: mongoSession });
-        results.paymentsCreated.push(mainPayment._id);
-
-        // 2. Atualiza PatientBalance (marca débitos como pagos)
-        const PatientBalance = (await import('../models/PatientBalance.js')).default;
-        
-        const balanceUpdate = await PatientBalance.findOneAndUpdate(
-            { 
-                patient: patientId,
-                'transactions._id': { $in: debitIds.map(id => new mongoose.Types.ObjectId(id)) }
-            },
-            {
-                $set: {
-                    'transactions.$[debit].isPaid': true,
-                    'transactions.$[debit].paidAt': now,
-                    'transactions.$[debit].paymentId': mainPayment._id
-                },
-                $inc: {
-                    currentBalance: -totalAmount,
-                    totalCredited: totalAmount
-                },
-                $push: {
-                    transactions: {
-                        type: 'payment',
-                        amount: totalAmount,
-                        description: `Pagamento múltiplo - ${debitIds.length} débito(s)`,
-                        paymentMethod: payments[0]?.paymentMethod || 'dinheiro',
-                        registeredBy: requestedBy,
-                        createdAt: now
-                    }
-                }
-            },
-            {
-                session: mongoSession,
-                arrayFilters: [{ 
-                    'debit._id': { $in: debitIds.map(id => new mongoose.Types.ObjectId(id)) },
-                    'debit.type': 'debit'
-                }],
-                new: true
-            }
-        );
-
-        if (!balanceUpdate) {
-            throw new Error('BALANCE_UPDATE_FAILED');
-        }
-
-        results.debitsMarked = debitIds;
-
-        // 3. Atualiza Appointments relacionados aos débitos
-        const appointmentIds = [];
-        for (const debitId of debitIds) {
-            const debit = balanceUpdate.transactions.find(t => 
-                t._id.toString() === debitId && t.type === 'debit'
-            );
-            if (debit?.appointmentId) {
-                appointmentIds.push(debit.appointmentId);
-            }
-        }
-
-        if (appointmentIds.length > 0) {
-            await Appointment.updateMany(
-                { _id: { $in: appointmentIds } },
-                {
-                    $set: {
-                        paymentStatus: 'paid',
-                        visualFlag: 'ok',
-                        paidAt: now,
-                        updatedAt: now,
-                        _fromWriteGateway: true,
-                    },
-                    $push: {
-                        history: {
-                            action: 'multi_payment_received',
-                            newStatus: 'paid',
-                            timestamp: now,
-                            context: `Pagamento múltiplo: ${mainPayment._id}`
-                        }
-                    }
-                },
-                { session: mongoSession }
-            );
-            results.appointmentsUpdated = appointmentIds;
-        }
-
-        await mongoSession.commitTransaction();
-
-        log.info('multi_payment_completed', `Payment-multi concluído: ${mainPayment._id}`, {
-            paymentId: mainPayment._id,
-            debitsCount: debitIds.length,
-            appointmentsCount: appointmentIds.length
-        });
-        
-        // 🏦 REGISTRA NO LEDGER (caixa) - MULTI-PAYMENT
-        try {
-            const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
-            await recordPaymentReceived(mainPayment, { correlationId });
-            log.info('ledger_recorded', `Lançamento contábil registrado (multi): ${totalAmount}`);
-        } catch (ledgerError) {
-            log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
-        }
-
-        // 🔄 ATUALIZA PAYMENTSVIEW (projection para tela de pagamentos)
-        try {
-            const { handlePaymentEvent } = await import('../projections/paymentsProjection.js');
-            await handlePaymentEvent({
-                type: 'PAYMENT_CREATED',
-                payload: { paymentId: mainPayment._id.toString() },
-                timestamp: new Date()
-            });
-            log.info('payment_projection_updated', `PaymentsView atualizada para ${mainPayment._id}`);
-        } catch (projError) {
-            log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
-        }
-
-        // 4. Publica eventos de resultado (com dados para projection)
-        await publishEvent(
-            EventTypes.PAYMENT_COMPLETED,
-            {
-                paymentId: mainPayment._id.toString(),
-                patientId: patientId.toString(),
-                amount: totalAmount,
-                billingType: 'particular', // 🎯 Para projection
-                paymentMethod: payments[0]?.paymentMethod || 'dinheiro', // 🎯 Para projection
-                type: 'multi_payment',
-                debitsCount: debitIds.length,
-                appointmentsCount: appointmentIds.length
-            },
-            { correlationId }
-        );
-
-        // 4.1 Solicita recálculo de totais (snapshot ficará stale)
-        await publishEvent(
-            EventTypes.TOTALS_RECALCULATE_REQUESTED,
-            {
-                clinicId: null, // Todos os clinicos
-                date: new Date().toISOString().split('T')[0],
-                period: 'month',
-                reason: 'payment_multi_completed',
-                triggeredBy: 'payment_worker'
-            },
-            { correlationId }
-        );
-
-        // 4.2 Solicita recálculo do daily-closing (atualiza caixa do dia)
-        const paymentDate = new Date().toISOString().split('T')[0];
-        console.log(`[PaymentWorker] Disparando DAILY_CLOSING_REQUESTED para ${paymentDate}`);
-        await publishEvent(
-            EventTypes.DAILY_CLOSING_REQUESTED,
-            {
-                clinicId: 'default',
-                date: paymentDate,
-                reason: 'payment_completed',
-                triggeredBy: 'payment_worker'
-            },
-            { correlationId }
-        );
-
-        // 🔄 INVALIDA CACHE FINANCEIRO
-        invalidateFinancialCaches();
-
-        // 5. Notificação
-        await publishEvent(
-            EventTypes.NOTIFICATION_REQUESTED,
-            {
-                type: 'PAYMENT_CONFIRMED',
-                patientId: patientId.toString(),
-                amount: totalAmount,
-                message: `Pagamento de R$ ${totalAmount} confirmado (${debitIds.length} débito(s) quitados)`
-            },
-            { correlationId }
-        );
-
-        return {
-            status: 'multi_payment_completed',
-            paymentId: mainPayment._id,
-            amount: totalAmount,
-            debitsCount: debitIds.length,
-            appointmentsUpdated: appointmentIds.length
-        };
-
     } catch (error) {
-        if (mongoSession.inTransaction()) {
-            await mongoSession.abortTransaction();
-        }
-        log.error('multi_payment_error', `Erro no payment-multi: ${error.message}`);
-
-        // Publica evento de falha
+        log.error('multi_payment_error', `Erro no payment-multi: ${error.message}`, { operationKey });
         await publishEvent(
             EventTypes.PAYMENT_FAILED,
             {
@@ -798,11 +510,37 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
             },
             { correlationId }
         );
-
         throw error;
-    } finally {
-        mongoSession.endSession();
     }
+
+    if (op.applied || op.sideEffectsPending) {
+        await runPostCommitEffects({
+            kind: 'multi_payment',
+            op,
+            correlationId,
+            log,
+            reason: 'payment_multi_completed',
+            completedPayload: {
+                paymentId: String(op.paymentId),
+                patientId: patientId.toString(),
+                amount: totalAmount,
+                billingType: 'particular',
+                paymentMethod: payments[0]?.paymentMethod || 'dinheiro',
+                type: 'multi_payment',
+                debitsCount: debitIds.length,
+                appointmentsCount: op.result?.appointmentsUpdated ?? 0
+            },
+            notification: {
+                type: 'PAYMENT_CONFIRMED',
+                patientId: patientId.toString(),
+                amount: totalAmount,
+                message: `Pagamento de R$ ${totalAmount} confirmado (${debitIds.length} débito(s) quitados)`
+            }
+        });
+    }
+
+    log.info('multi_payment_completed', `Payment-multi: ${op.paymentId}`, { operationKey, replayed: op.replayed });
+    return { ...(op.result || {}), replayed: op.replayed, operationKey };
 }
 
 /**
