@@ -116,3 +116,9 @@ jobs:
         env:
           MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
         run: npm run test:envios-anti-reenvio
+      - name: Fila do WhatsApp Web com o guard e inventário dos caminhos de envio (node:test)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+        run: |
+          npm run test:envios-whatsapp-web
+          npm run test:envios-inventario

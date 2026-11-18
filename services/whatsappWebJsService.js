@@ -1721,19 +1721,23 @@ export async function getStatus() {
 }
 
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
+// Erro lançado ANTES de qualquer client.sendMessage: prova que nada saiu
+// (o guarda de entregas libera nova tentativa só nesses casos).
+const notSentError = (msg) => Object.assign(new Error(msg), { deliveryNotSent: true });
+
 export async function sendMessage(phone, message, options = {}) {
   if (!isReady || !client) {
-    throw new Error('WhatsApp não está conectado');
+    throw notSentError('WhatsApp não está conectado');
   }
   const clean = normalizeE164BR(phone);
   if (!clean) {
-    throw new Error(`Número inválido: ${phone}`);
+    throw notSentError(`Número inválido: ${phone}`);
   }
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
   try {
     const numberId = await client.getNumberId(clean);
     if (!numberId) {
-      throw new Error(`Número ${clean} não possui WhatsApp`);
+      throw notSentError(`Número ${clean} não possui WhatsApp`);
     }
     let result;
     if (options.attendanceConfirmation && options.appointmentId) {

@@ -14,6 +14,7 @@ import {
 import { getFirstAvailableDate, isInRecesso } from '../config/clinic.js';
 import Doctor from "../models/Doctor.js";
 import { sendTextMessage } from './whatsappService.js';
+import { guardedSend } from '../infrastructure/delivery/deliveryGuard.js';
 import { calculateAvailableSlots } from '../middleware/conflictDetection.js';
 
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
@@ -875,7 +876,12 @@ export async function bookFixedSlot({
                         `👩‍⚕️ *Profissional:* ${doctorName}\n` +
                         `🩺 *Especialidade:* ${specialty || 'N/A'}\n` +
                         `📋 *Tipo:* ${sessionType}`;
-                    return sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'system' });
+                    const appointmentId = appointmentData?._id || appointmentData?.id || appointmentData?.appointmentId;
+                    const send = () => sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'system' });
+                    // Reprocessar o mesmo agendamento não avisa o dono duas vezes.
+                    return appointmentId
+                        ? guardedSend({ channel: 'whatsapp', deliveryKey: `booking_owner_notice:${appointmentId}`, destination: ownerPhone, send })
+                        : send();
                 })
                 .then(() => console.log('[bookFixedSlot] ✅ Notificação WPP enviada ao dono'))
                 .catch(e => console.warn('[bookFixedSlot] ⚠️ WPP falhou (ignorado):', e.message));
