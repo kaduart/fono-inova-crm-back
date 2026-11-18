@@ -86,3 +86,7 @@ jobs:
         run: npx vitest run tests/unit services utils domains --reporter=default --reporter=json --outputFile=vitest-report.json || true
       - name: Catraca dos testes
         run: node .github/ci/ratchet.mjs tests vitest-report.json .github/ci/testes-falhando-baseline.txt
+      - name: Auth das rotas de dead-letter (node:test, Mongo descartável)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+        run: npm run test:observability-auth

@@ -44,6 +44,7 @@
     "test:vitest": "vitest run",
     "test:amanda": "vitest run --config vitest.config.amanda.js",
     "test:agent": "node --test tests/agent/*.test.mjs",
+    "test:observability-auth": "node --test --test-force-exit tests/observability/deadLettersAuth.mongo.nodetest.mjs",
     "agent:cenarios": "node scripts/amanda-agent-cenarios.mjs",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
     "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",

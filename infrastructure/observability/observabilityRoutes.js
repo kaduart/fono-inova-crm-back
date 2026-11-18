@@ -169,8 +169,10 @@ router.get('/system-health', getSystemHealthHandler);
 router.get('/flow/:correlationId', getFlowHandler);
 
 // Dead Letters - inspeção detalhada e retry
-router.get('/dead-letters', getDeadLettersHandler);
-router.get('/dead-letters/:eventId', getDeadLetterDetailsHandler);
+// Leitura também exige admin: evento em dead letter pertence a fluxos com dado
+// de paciente. A resposta é mínima (sem payload, stack ou metadata completa).
+router.get('/dead-letters', auth, authorize(['admin']), getDeadLettersHandler);
+router.get('/dead-letters/:eventId', auth, authorize(['admin']), getDeadLetterDetailsHandler);
 router.post('/dead-letters/:eventId/retry', auth, authorize(['admin']), retryDeadLetterHandler);
 router.post('/dead-letters/retry-batch', auth, authorize(['admin']), retryBatchDeadLettersHandler);
 
