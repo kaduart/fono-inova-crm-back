@@ -17,6 +17,23 @@
 
 import { randomUUID } from 'node:crypto';
 import EventStore from '../../models/EventStore.js';
+import { sendAlert } from '../alerts/alertService.js';
+
+/**
+ * Retomadas de posse abandonada antes do estado terminal dead_letter.
+ * Conta tanto a retomada pelo reaper quanto a retomada direta por uma nova
+ * execução (claimEvent sobre prazo vencido): as duas significam que uma
+ * execução anterior morreu sem concluir nem falhar.
+ *
+ * Por que 3: por job, o BullMQ executa no máximo maxStalledCount + 1 vezes
+ * antes de declarar "job stalled more than allowable limit". O maior
+ * maxStalledCount do CRM é 2 (padrão 1), logo 3 execuções abandonadas
+ * esgotam o que a própria fila permitiria. Erros comuns (exceção) não contam
+ * aqui; eles seguem MAX_FAILED_ATTEMPTS (5) como antes.
+ */
+export const MAX_RECOVERIES = 3;
+export const EXHAUSTED_CODE = 'RECOVERY_LIMIT_EXCEEDED';
+export const EXHAUSTED_MESSAGE = `Recovery limit reached (${MAX_RECOVERIES}); moved to dead_letter`;
 
 /**
  * Prazo de posse padrão: 60 s, renovado a cada 20 s.
@@ -81,32 +98,61 @@ export function notLiveOwnedFilter(now) {
  * @returns {Promise<{status:'claimed', token, leaseExpiresAt}
  *   | {status:'not_found'|'already_processed'|'dead_letter'|'busy'|'not_claimable', current?}>}
  */
-export async function claimEvent(eventId, owner, { leaseMs = DEFAULT_LEASE_MS, now = new Date() } = {}) {
+export async function claimEvent(eventId, owner, { leaseMs = DEFAULT_LEASE_MS, now = new Date(), maxRecoveries = MAX_RECOVERIES, alert = sendAlert } = {}) {
   const token = randomUUID();
   const leaseExpiresAt = new Date(now.getTime() + leaseMs);
+  const claimSet = {
+    status: 'processing',
+    processingToken: token,
+    processingOwner: owner || 'unknown',
+    processingStartedAt: now,
+    leaseExpiresAt
+  };
+  const projection = { eventId: 1, status: 1, attempts: 1, recoveryCount: 1 };
+
+  // 1. Reivindicação normal.
   const claimed = await EventStore.findOneAndUpdate(
-    {
-      eventId,
-      $or: [
-        { status: { $in: ['pending', 'failed'] } },
-        // Execução abandonada: prazo vencido.
-        { status: 'processing', leaseExpiresAt: { $lte: now } },
-        // Execução legada sem token, presa pelo critério do reaper antigo.
-        { status: 'processing', processingToken: { $exists: false }, createdAt: { $lt: new Date(now.getTime() - LEGACY_STUCK_MS) } }
-      ]
-    },
-    {
-      $set: {
-        status: 'processing',
-        processingToken: token,
-        processingOwner: owner || 'unknown',
-        processingStartedAt: now,
-        leaseExpiresAt
-      }
-    },
-    { new: true, projection: { eventId: 1, status: 1, attempts: 1 } }
+    { eventId, status: { $in: ['pending', 'failed'] } },
+    { $set: claimSet },
+    { new: true, projection }
   ).lean();
   if (claimed) return { status: 'claimed', token, leaseExpiresAt };
+
+  // 2. Retomada de execução abandonada (conta como recuperação).
+  const abandoned = {
+    status: 'processing',
+    $or: [
+      // Prazo vencido.
+      { leaseExpiresAt: { $lte: now } },
+      // Execução legada sem posse, presa pelo critério do reaper antigo.
+      { processingToken: { $exists: false }, leaseExpiresAt: { $exists: false }, createdAt: { $lt: new Date(now.getTime() - LEGACY_STUCK_MS) } }
+    ]
+  };
+  const retaken = await EventStore.findOneAndUpdate(
+    { eventId, ...abandoned, $and: [{ $or: [{ recoveryCount: { $exists: false } }, { recoveryCount: null }, { recoveryCount: { $lt: maxRecoveries - 1 } }] }] },
+    [{ $set: { ...claimSet, processingOwner: { $literal: claimSet.processingOwner }, recoveryCount: { $add: [{ $ifNull: ['$recoveryCount', 0] }, 1] } } }],
+    { new: true, projection }
+  ).lean();
+  if (retaken) return { status: 'claimed', token, leaseExpiresAt, recovered: true, recoveryCount: retaken.recoveryCount };
+
+  // 3. Abandonada pela última vez permitida: estado terminal + alerta.
+  const exhausted = await EventStore.findOneAndUpdate(
+    { eventId, ...abandoned, recoveryCount: { $gte: maxRecoveries - 1 } },
+    [
+      { $set: { status: 'dead_letter', recoveryCount: { $add: ['$recoveryCount', 1] }, error: { $literal: { message: EXHAUSTED_MESSAGE, code: EXHAUSTED_CODE } } } },
+      { $unset: Object.keys(LEASE_FIELDS) }
+    ],
+    { new: true, projection: { ...projection, eventType: 1 } }
+  ).lean();
+  if (exhausted) {
+    await Promise.resolve(alert({
+      level: 'critical',
+      type: 'event_recovery_limit',
+      message: `Evento ${exhausted.eventType} (${eventId}) abandonado ${exhausted.recoveryCount} vezes; movido para dead_letter`,
+      details: { eventId, eventType: exhausted.eventType, recoveries: exhausted.recoveryCount, stage: 'claim' }
+    })).catch(() => {});
+    return { status: 'dead_letter', current: exhausted, exhausted: true };
+  }
 
   const current = await EventStore.findOne({ eventId }, { eventId: 1, status: 1, processingToken: 1, leaseExpiresAt: 1, attempts: 1 }).lean();
   if (!current) return { status: 'not_found' };

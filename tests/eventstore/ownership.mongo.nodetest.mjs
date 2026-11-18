@@ -129,7 +129,9 @@ test('perda de posse: worker travado não conclui depois que outro retomou', { s
   const r = await processWithGuarantees({ eventId: id }, async (_e, ctx) => {
     const end = Date.now() + 700;
     while (Date.now() < end) { /* event loop travado: nenhuma renovação roda */ }
-    const other = await claimEvent(id, 'workerNovo', { leaseMs: 5000 });
+    // O relógio do novo worker está adiante: mesmo que a renovação atrasada
+    // do dono antigo rode durante esta chamada, o prazo dele já venceu.
+    const other = await claimEvent(id, 'workerNovo', { leaseMs: 5000, now: new Date(Date.now() + 10_000) });
     assert.equal(other.status, 'claimed', 'posse vencida deve ser retomável');
     otherToken = other.token;
     await sleep(250); // dá tempo de a renovação perceber a perda
@@ -387,4 +389,88 @@ test('sem eventId: processa sem posse e não escreve em nenhum documento', { ski
   assert.equal(await EventStore.countDocuments({ status: { $ne: 'pending' } }), 0, 'nenhum documento mudou');
   await assert.rejects(processWithGuarantees({ eventId: '' }, async () => { throw new Error('falha-ficticia'); }, 'w'), /falha-ficticia/);
   assert.equal((await get(id)).status, 'pending');
+});
+
+// ---------- dead_letter visível e recuperável ----------
+const { listDeadLetters, retryDeadLetter } = await import('../../infrastructure/observability/deadLetterService.js');
+const { getQueue } = await import('../../infrastructure/queue/queueConfig.js');
+
+test('dead_letter do limite aparece na listagem e volta por retry com orçamento zerado', { skip }, async () => {
+  const added = [];
+  for (const q of ['notification', 'patient-projection', 'clinical-orchestrator']) {
+    getQueue(q).add = async (name, data) => { added.push([q, data.eventId]); return { id: `fake-${q}` }; };
+  }
+  const id = await seed({ status: 'processing', processingToken: 'tok-velho', leaseExpiresAt: new Date(Date.now() - 1000), recoveryCount: MAX_RECOVERIES - 1 });
+  const alerts = [];
+  const r = await reapStuckEvents({ alert: async (a) => alerts.push(a) });
+  assert.equal(r.deadLetter, 1);
+  assert.equal(alerts.length, 1);
+
+  const list = await listDeadLetters({});
+  const item = list.items?.find(i => i.eventId === id) ?? list.events?.find(i => i.eventId === id);
+  assert.ok(item, 'aparece na listagem de dead letters');
+  assert.equal(item.error.code, 'RECOVERY_LIMIT_EXCEEDED');
+  assert.equal(item.recoveryCount, MAX_RECOVERIES);
+
+  const out = await retryDeadLetter(id);
+  assert.equal(out.status, 'pending');
+  assert.equal(added.filter(([, e]) => e === id).length, 3, 'republicado nas filas mapeadas');
+  const doc = await get(id);
+  assert.equal(doc.status, 'pending');
+  assert.equal(doc.recoveryCount, undefined, 'orçamento de recuperações zerado');
+  assert.equal(doc.processingToken, undefined);
+
+  await assert.rejects(retryDeadLetter(id), { code: 'EVENT_NOT_FOUND' }, 'segundo retry não republica');
+  assert.equal(added.filter(([, e]) => e === id).length, 3);
+  assert.equal((await claimEvent(id, 'w', { leaseMs: 5000 })).status, 'claimed', 'volta a ser processável');
+});
+
+// ---------- limite de recuperações também na retomada direta ----------
+test('retomada direta de posse vencida conta como recuperação; a 3ª vai para dead_letter com alerta', { skip }, async () => {
+  const id = await seed();
+  const alerts = [];
+  const opts = { leaseMs: 1, alert: async (a) => alerts.push(a) };
+  assert.equal((await claimEvent(id, 'exec1', opts)).status, 'claimed');
+  for (let n = 1; n < MAX_RECOVERIES; n++) {
+    await sleep(10); // execução anterior morreu: prazo vence
+    const c = await claimEvent(id, `exec${n + 1}`, opts);
+    assert.equal(c.status, 'claimed');
+    assert.equal(c.recoveryCount, n);
+  }
+  await sleep(10);
+  const last = await claimEvent(id, 'execFinal', opts);
+  assert.equal(last.status, 'dead_letter');
+  assert.equal(last.exhausted, true);
+  const doc = await get(id);
+  assert.equal(doc.status, 'dead_letter');
+  assert.equal(doc.recoveryCount, MAX_RECOVERIES);
+  assert.equal(doc.error.code, 'RECOVERY_LIMIT_EXCEEDED');
+  assert.equal(doc.error.stack, undefined, 'error substituído, não mesclado');
+  assert.equal(doc.processingToken, undefined);
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].type, 'event_recovery_limit');
+  const r = await processWithGuarantees({ eventId: id }, async () => { throw new Error('não deveria rodar'); }, 'w');
+  assert.equal(r.skipped, true);
+});
+
+test('reaper e retomada direta somam no mesmo contador', { skip }, async () => {
+  const id = await seed();
+  await claimEvent(id, 'exec1', { leaseMs: 1 });
+  await sleep(10);
+  assert.equal((await reapStuckEvents({ alert: async () => {} })).reset, 1); // recoveryCount 1
+  await claimEvent(id, 'exec2', { leaseMs: 1 });
+  await sleep(10);
+  assert.equal((await claimEvent(id, 'exec3', { leaseMs: 1 })).recoveryCount, 2);
+  await sleep(10);
+  const r = await reapStuckEvents({ alert: async () => {} });
+  assert.equal(r.deadLetter, 1);
+  assert.equal((await get(id)).recoveryCount, 3);
+});
+
+test('falha comum (exceção) não consome o orçamento de recuperações', { skip }, async () => {
+  const id = await seed();
+  await assert.rejects(processWithGuarantees({ eventId: id }, async () => { const e = new Error('timeout ficticio'); e.code = 'ETIMEDOUT'; throw e; }, 'w', { leaseMs: 5000 }));
+  const doc = await get(id);
+  assert.equal(doc.status, 'failed');
+  assert.equal(doc.recoveryCount, undefined);
 });

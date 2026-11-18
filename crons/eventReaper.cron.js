@@ -23,14 +23,9 @@ let intervalId = null;
 const STUCK_THRESHOLD_MINUTES = 15;
 const MAX_ATTEMPTS_FOR_RETRY = 3;
 
-/**
- * Recuperações (posse abandonada retomada pelo reaper) antes do estado
- * terminal dead_letter. Base: o maior maxStalledCount dos workers do CRM é 2
- * (o padrão do BullMQ é 1). Depois de 2 abandonos o BullMQ já não reentrega o
- * job; um 3º abandono indica evento que derruba o worker (ex.: OOM) e não
- * deve circular para sempre (defeito L-2 do reaper antigo).
- */
-export const MAX_RECOVERIES = 3;
+// Limite e justificativa em infrastructure/events/eventOwnership.js (fonte única).
+import { MAX_RECOVERIES } from '../infrastructure/events/eventOwnership.js';
+export { MAX_RECOVERIES };
 
 const LEGACY_MESSAGE = `Auto-recovered from stuck processing after ${STUCK_THRESHOLD_MINUTES}min`;
 const LEASE_MESSAGE = 'Auto-recovered: processing lease expired';
