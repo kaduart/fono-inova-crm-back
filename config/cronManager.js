@@ -48,12 +48,39 @@ export function listActiveCrons() {
  * Pode ser chamado tanto pelo server.js (modo monolítico legado)
  * quanto pelo cron-worker dedicado.
  */
+/**
+ * Dono do reaper do Event Store: 'node' (padrão) roda crons/eventReaper.cron.js
+ * neste processo; 'kas' não roda (o reaper da KAS Core assume). Qualquer outro
+ * valor é erro de configuração e impede a subida, para nunca ficar ambíguo
+ * quem recupera eventos. Não use ENABLE_CRONS para isso: ele desliga todos.
+ */
+export const EVENT_REAPER_OWNERS = ['node', 'kas'];
+
+export function resolveEventReaperOwner(env = process.env) {
+    const raw = env.EVENT_REAPER_OWNER;
+    if (raw === undefined || raw.trim() === '') return 'node';
+    const v = raw.trim().toLowerCase();
+    if (!EVENT_REAPER_OWNERS.includes(v)) {
+        throw new Error(`EVENT_REAPER_OWNER inválido: "${raw}". Use "node" (padrão) ou "kas".`);
+    }
+    return v;
+}
+
 export async function startAllCrons() {
+    // Valida antes de iniciar qualquer cron: configuração inválida falha inteira.
+    const reaperOwner = resolveEventReaperOwner();
+    const { legacyFenceFromEnv } = await import('../infrastructure/events/eventOwnership.js');
+    legacyFenceFromEnv(); // EVENT_LEGACY_FENCE_AT inválida derruba a inicialização
+
     const { initAppointmentRecoveryCron } = await import("../crons/appointmentRecovery.cron.js");
     startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
 
-    const { initEventReaperCron } = await import("../crons/eventReaper.cron.js");
-    startCron('eventReaper', () => initEventReaperCron());
+    if (reaperOwner === 'node') {
+        const { initEventReaperCron } = await import("../crons/eventReaper.cron.js");
+        startCron('eventReaper', () => initEventReaperCron());
+    } else {
+        console.log("[CronManager] ⏭️ eventReaper não iniciado: EVENT_REAPER_OWNER=kas (reaper da KAS Core é o dono)");
+    }
 
     const { scheduleFinancialSnapshotAudit } = await import("../crons/financialSnapshotAudit.cron.js");
     startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());

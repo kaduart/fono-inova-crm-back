@@ -341,7 +341,7 @@ export async function retryDeadLetterHandler(req, res) {
         const { eventId } = req.params;
         const { dryRun = false } = req.body || {};
 
-        const result = await retryDeadLetter(eventId, { dryRun: !!dryRun });
+        const result = await retryDeadLetter(eventId, { dryRun: !!dryRun, requestedBy: req.user?._id || req.user?.id || null, reason: req.body?.reason || null });
 
         res.json({
             success: true,
@@ -349,7 +349,7 @@ export async function retryDeadLetterHandler(req, res) {
         });
     } catch (error) {
         console.error('[Observability] Erro ao fazer retry de dead letter:', error);
-        const statusCode = error.code === 'EVENT_NOT_FOUND' || error.code === 'NO_QUEUE_MAPPED' ? 404 : 500;
+        const statusCode = error.code === 'EVENT_NOT_FOUND' || error.code === 'NO_QUEUE_MAPPED' ? 404 : error.code === 'RETRY_PUBLISH_FAILED' ? 503 : 500;
         res.status(statusCode).json({
             success: false,
             error: 'Erro ao fazer retry do dead letter',
@@ -372,7 +372,9 @@ export async function retryBatchDeadLettersHandler(req, res) {
             aggregateType: aggregateType || null,
             eventType: eventType || null,
             limit: limit ? Number(limit) : 50,
-            dryRun: !!dryRun
+            dryRun: !!dryRun,
+            requestedBy: req.user?._id || req.user?.id || null,
+            reason: req.body?.reason || null
         });
 
         res.json({

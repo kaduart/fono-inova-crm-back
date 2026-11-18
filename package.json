@@ -45,6 +45,8 @@
     "test:amanda": "vitest run --config vitest.config.amanda.js",
     "test:agent": "node --test tests/agent/*.test.mjs",
     "test:observability-auth": "node --test --test-force-exit tests/observability/deadLettersAuth.mongo.nodetest.mjs",
+    "test:eventstore-posse": "node --test --test-force-exit tests/eventstore/ownership.mongo.nodetest.mjs",
+    "test:eventstore-validacao": "node --test --test-force-exit --test-concurrency=1 tests/eventstore/ownership.mongo.nodetest.mjs tests/eventstore/bullmqInteraction.mongo.nodetest.mjs tests/eventstore/mixedVersions.mongo.nodetest.mjs tests/eventstore/adminRetry.mongo.nodetest.mjs",
     "agent:cenarios": "node scripts/amanda-agent-cenarios.mjs",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
     "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",

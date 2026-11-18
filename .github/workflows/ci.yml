@@ -90,3 +90,13 @@ jobs:
         env:
           MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
         run: npm run test:observability-auth
+      - name: Testes por caso (aprovados, falhas antigas, regressões novas)
+        if: always()
+        run: |
+          node .github/ci/classificar-testes.mjs vitest-report.json .github/ci/testes-falhando-baseline-casos.txt || {
+            echo "Linha de base que este relatório geraria:"; node .github/ci/classificar-testes.mjs vitest-report.json x --gerar; exit 1; }
+      - name: Posse do Event Store com BullMQ real, versões mistas e retry auditado (node:test)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+          REDIS_TEST_URL: redis://127.0.0.1:6379
+        run: npm run test:eventstore-validacao

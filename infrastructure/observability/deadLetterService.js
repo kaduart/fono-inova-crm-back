@@ -6,11 +6,13 @@
  * - Dry-run para simulação
  */
 
+import { randomUUID } from 'crypto';
 import EventStore from '../../models/EventStore.js';
 import { queues, eventToQueueMap } from '../events/eventPublisher.js';
 import { createContextLogger } from '../../utils/logger.js';
 
 const log = createContextLogger(null, 'dead_letter_service');
+const MAX_RETRY_BATCH = 100;
 
 /**
  * Resposta mínima: as rotas de leitura (admin) nunca devolvem payload,
@@ -85,6 +87,7 @@ export async function listDeadLetters(options = {}) {
         aggregateId: e.aggregateId,
         status: e.status,
         attempts: e.attempts,
+        recoveryCount: e.recoveryCount ?? 0,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         processedAt: e.processedAt,
@@ -131,6 +134,7 @@ export async function getDeadLetterById(eventId) {
         sequenceNumber: event.sequenceNumber,
         status: event.status,
         attempts: event.attempts,
+        recoveryCount: event.recoveryCount ?? 0,
         createdAt: event.createdAt,
         processedAt: event.processedAt,
         processedBy: event.processedBy,
@@ -148,7 +152,7 @@ export async function getDeadLetterById(eventId) {
  * Retry de um evento dead letter individual
  */
 export async function retryDeadLetter(eventId, options = {}) {
-    const { dryRun = false } = options;
+    const { dryRun = false, requestedBy = null, reason = null } = options;
 
     const event = await EventStore.findOne({ eventId, status: 'dead_letter' }).lean();
     if (!event) {
@@ -178,9 +182,25 @@ export async function retryDeadLetter(eventId, options = {}) {
         };
     }
 
-    // 1. Resetar evento no Event Store
-    await EventStore.updateOne(
-        { eventId },
+    // 1. Resetar evento no Event Store. Condicional a dead_letter: dois
+    // retries simultâneos não republicam duas vezes. A retomada manual zera
+    // o orçamento de recuperações e limpa qualquer resto de posse.
+    // Trilha de auditoria gravada NA MESMA escrita condicional: não há retry
+    // sem registro de quem pediu, quando e o que foi zerado.
+    const retryId = randomUUID();
+    const auditEntry = {
+        id: retryId,
+        at: new Date(),
+        by: requestedBy ? String(requestedBy) : 'desconhecido',
+        reason: reason ? String(reason).slice(0, 200) : null,
+        previousAttempts: event.attempts ?? 0,
+        previousRecoveryCount: event.recoveryCount ?? 0,
+        previousErrorCode: event.error?.code ?? null,
+        previousErrorMessage: event.error?.message ? String(event.error.message).slice(0, 300) : null,
+        outcome: 'reset'
+    };
+    const reset = await EventStore.collection.updateOne(
+        { eventId, status: 'dead_letter' },
         {
             $set: {
                 status: 'pending',
@@ -188,9 +208,17 @@ export async function retryDeadLetter(eventId, options = {}) {
                 error: null,
                 processedAt: null,
                 processedBy: null
-            }
+            },
+            $unset: { recoveryCount: '', processingToken: '', processingOwner: '', leaseExpiresAt: '' },
+            $inc: { adminRetryCount: 1 },
+            $push: { adminRetries: { $each: [auditEntry], $slice: -20 } }
         }
     );
+    if (reset.matchedCount === 0) {
+        const error = new Error('Evento saiu de dead letter antes do retry (outro retry em andamento?)');
+        error.code = 'EVENT_NOT_FOUND';
+        throw error;
+    }
 
     // 2. Reconstruir jobData e republicar nas filas
     const jobData = {
@@ -228,6 +256,28 @@ export async function retryDeadLetter(eventId, options = {}) {
         }
     }
 
+    const jobsAdded = jobs.filter(j => j.jobId).length;
+    if (jobsAdded === 0) {
+        // Nada republicado: sem isto o evento ficaria 'pending' sem job (órfão).
+        await EventStore.collection.updateOne(
+            { eventId, status: 'pending', 'adminRetries.id': retryId },
+            {
+                $set: {
+                    status: 'dead_letter',
+                    error: { message: 'Retry administrativo não conseguiu republicar o evento', code: 'RETRY_PUBLISH_FAILED' },
+                    'adminRetries.$.outcome': 'publish_failed'
+                }
+            }
+        );
+        const error = new Error('Nenhuma fila aceitou o evento; ele voltou para dead letter');
+        error.code = 'RETRY_PUBLISH_FAILED';
+        throw error;
+    }
+    await EventStore.collection.updateOne(
+        { eventId, 'adminRetries.id': retryId },
+        { $set: { 'adminRetries.$.outcome': 'published', 'adminRetries.$.jobsAdded': jobsAdded } }
+    );
+
     log.info('dead_letter_retried', 'Evento retornado para fila', {
         eventId,
         jobsAdded: jobs.filter(j => j.jobId).length,
@@ -254,7 +304,9 @@ export async function retryBatchDeadLetters(options = {}) {
         aggregateType = null,
         eventType = null,
         limit = 50,
-        dryRun = false
+        dryRun = false,
+        requestedBy = null,
+        reason = null
     } = options;
 
     const query = { status: 'dead_letter' };
@@ -265,7 +317,7 @@ export async function retryBatchDeadLetters(options = {}) {
     if (eventType) query.eventType = eventType;
 
     const events = await EventStore.find(query)
-        .limit(Math.max(1, Number(limit)))
+        .limit(Math.min(MAX_RETRY_BATCH, Math.max(1, Number(limit) || 50)))
         .lean();
 
     const results = [];
@@ -274,7 +326,7 @@ export async function retryBatchDeadLetters(options = {}) {
 
     for (const event of events) {
         try {
-            const result = await retryDeadLetter(event.eventId, { dryRun });
+            const result = await retryDeadLetter(event.eventId, { dryRun, requestedBy, reason });
             results.push({ eventId: event.eventId, success: true, ...result });
             successCount++;
         } catch (error) {

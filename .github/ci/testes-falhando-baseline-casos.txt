@@ -1,0 +1,29 @@
+# Linha de base POR CASO, tirada do CI da main f560f63 (run 44354242433, 18/11/2026).
+# Formato: <arquivo> > <describe> > ... > <teste>  |  <arquivo> [carregamento]
+# Regenerar: node .github/ci/classificar-testes.mjs vitest-report.json .github/ci/testes-falhando-baseline-casos.txt --gerar
+tests/unit/appointment-client-fields-contract.test.js > contrato único de campos simples do Appointment > o DTO expõe todos os campos contratados com os mesmos valores
+tests/unit/completeWorker.safety.test.js > CompleteOrchestratorWorker - Segurança > Liberação de Lock > deve existir função de liberação de lock
+tests/unit/context-enrichment.test.js [carregamento]
+tests/unit/eventDrivenArchitecture.test.js [carregamento]
+tests/unit/evolution-v2-api-contract.test.js [carregamento]
+tests/unit/financialFeatureFlag.test.js [carregamento]
+tests/unit/flagsDetector.p1-p4.test.js [carregamento]
+tests/unit/fsm-production-bugs.test.js [carregamento]
+tests/unit/gmbReviewReplies.test.mjs [carregamento]
+tests/unit/guideLifecycle/insuranceGuidesApi.test.js > InsuranceGuides API Response (Sprint 2) > retorna formato { guide, lifecycle } para guia ativa válida
+tests/unit/orchestrator-v8.test.js [carregamento]
+tests/unit/orchestrator.neuro.test.js [carregamento]
+tests/unit/packageTransferCanonicalRules.test.js > regras canônicas da transferência e do reparo da guia > estorna Payment pelo serviço canônico, nunca por update direto de status
+tests/unit/patientBalance.test.js > PatientBalance > getPendingBySpecialty > deve filtrar apenas débitos não quitados da especialidade
+tests/unit/paymentArchitecture.v4.test.js > Modelos v4.0 - Integração > deve carregar modelo Payment com campos v4.0
+tests/unit/production-fixes.test.js > 🚨 Correções de Produção > P4: ChatContext > fetchRecentConversations não deve usar ChatContext
+tests/unit/safeAgeUpdate.test.js [carregamento]
+tests/unit/settle.guard.test.js [carregamento]
+tests/unit/taxaCartao.test.js [carregamento]
+tests/unit/therapyAreaMapping.test.js [carregamento]
+tests/unit/therapyDetector.test.js [carregamento]
+tests/unit/updatePackageCommand.test.js > updatePackageCommand > atualiza o pacote e salva PACKAGE_UPDATED no Outbox
+tests/unit/updatePackageCommand.test.js > updatePackageCommand > rejeita campos imutáveis
+tests/unit/validate-services.test.js [carregamento]
+tests/validate-services.test.js [carregamento]
+utils/resolveSessionFinancialValue.test.js [carregamento]
