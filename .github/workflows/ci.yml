@@ -112,3 +112,7 @@ jobs:
             sleep 2
           done
           npm run test:pagamentos-idempotencia
+      - name: Proteção contra reenvio de WhatsApp/e-mail (node:test, provedor simulado)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+        run: npm run test:envios-anti-reenvio

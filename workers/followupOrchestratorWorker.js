@@ -10,6 +10,7 @@ import Message from '../models/Message.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import { sendTextMessage } from '../services/whatsappService.js';
+import { guardedSend, DeliveryOutcome } from '../infrastructure/delivery/deliveryGuard.js';
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import enrichLeadContext from '../services/leadContext.js';
 import {
@@ -166,12 +167,35 @@ export function startFollowupOrchestratorWorker() {
         throw new Error('LEAD_NO_PHONE');
       }
 
-      const sendResult = await sendTextMessage({
-        to: phone,
-        text: messageResult.text,
-        lead: lead._id,
-        sentBy: 'amanda'
+      // Um follow-up (por tentativa) tem no máximo um envio. Se o processo
+      // cair entre o envio e a atualização abaixo, a reentrega não reenvia.
+      const delivery = await guardedSend({
+        channel: 'whatsapp',
+        deliveryKey: `followup:${followupId}:${attempt || 1}`,
+        destination: phone,
+        log,
+        send: () => sendTextMessage({
+          to: phone,
+          text: messageResult.text,
+          lead: lead._id,
+          sentBy: 'amanda'
+        })
       });
+
+      if (delivery.outcome === DeliveryOutcome.ALREADY_SENT) {
+        await Followup.findOneAndUpdate(
+          { _id: followupId, status: { $nin: ['sent', 'canceled'] } },
+          { status: 'sent', sentAt: new Date(), sentBy: 'amanda' }
+        );
+        return { status: 'already_sent', followupId, leadId };
+      }
+      if (delivery.outcome !== DeliveryOutcome.SENT) {
+        log.warn('delivery_not_confirmed', 'Follow-up sem envio confirmado; sem reenvio automático', {
+          followupId, outcome: delivery.outcome
+        });
+        return { status: `delivery_${delivery.outcome}`, followupId, leadId };
+      }
+      const sendResult = delivery.result;
 
       log.info('message_sent', 'Mensagem enviada', {
         waMessageId: sendResult?.messages?.[0]?.id

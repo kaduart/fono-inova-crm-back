@@ -5,6 +5,22 @@
 import Leads from '../models/Leads.js';
 import Message from '../models/Message.js';
 import { sendTextMessage, sendTemplateMessage } from './whatsappService.js';
+import { guardedSend, DeliveryOutcome } from '../infrastructure/delivery/deliveryGuard.js';
+
+// Cada parte de cada estágio de recovery sai no máximo uma vez por lead.
+// Envio já feito conta como feito (o estágio avança); resultado incerto ou
+// envio em curso NÃO avançam o estágio e NÃO reenviam.
+async function sendRecoveryPart(leadId, nextStage, part, phone, send) {
+  const r = await guardedSend({
+    channel: 'whatsapp',
+    deliveryKey: `recovery:${leadId}:stage${nextStage}:${part}`,
+    destination: phone,
+    send
+  });
+  return r.outcome === DeliveryOutcome.SENT || r.outcome === DeliveryOutcome.ALREADY_SENT
+    ? null
+    : r.outcome;
+}
 import { detectSpecialtyFromMessage } from '../utils/campaignDetector.js';
 
 // Templates de mensagens por especialidade
@@ -178,34 +194,37 @@ async function sendRecoveryMessage(lead) {
     if (in24hWindow) {
       // Dentro da janela: envia texto normal
       console.log(`[RECOVERY] Lead ${lead._id} dentro da janela 24h - enviando texto`);
-      await sendTextMessage({
+      const blocked = await sendRecoveryPart(lead._id, nextStage, 'text', phone, () => sendTextMessage({
         to: phone,
         text: message,
         lead: lead._id,
         sentBy: 'amanda'
-      });
+      }));
+      if (blocked) return { success: false, error: `DELIVERY_${blocked.toUpperCase()}`, leadId: lead._id };
     } else {
       // Fora da janela: envia template de recontato primeiro
       console.log(`[RECOVERY] Lead ${lead._id} FORA da janela 24h - enviando template recontato`);
-      await sendTemplateMessage({
+      const blockedTpl = await sendRecoveryPart(lead._id, nextStage, 'template', phone, () => sendTemplateMessage({
         to: phone,
         template: 'recontato_clinica',
         params: [],
         lead: lead._id,
         sentBy: 'amanda_recovery'
-      });
+      }));
+      if (blockedTpl) return { success: false, error: `DELIVERY_${blockedTpl.toUpperCase()}`, leadId: lead._id };
       
       // Se stage 2, envia também o texto como follow-up (após template abrir a janela)
       if (nextStage === 2) {
         console.log(`[RECOVERY] Stage 2 - enviando texto complementar após template`);
         // Pequeno delay para garantir que o template chegue primeiro
         await new Promise(r => setTimeout(r, 2000));
-        await sendTextMessage({
+        const blockedText = await sendRecoveryPart(lead._id, nextStage, 'text', phone, () => sendTextMessage({
           to: phone,
           text: message,
           lead: lead._id,
           sentBy: 'amanda'
-        });
+        }));
+        if (blockedText) return { success: false, error: `DELIVERY_${blockedText.toUpperCase()}`, leadId: lead._id };
       }
     }
 
