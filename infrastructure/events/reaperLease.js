@@ -80,6 +80,41 @@ export async function liveReaperLeaseHolder(db) {
 }
 
 /**
+ * Marca que o reaper do Node participa da posse compartilhada (modo on).
+ * Grava `participants.crmNode = { at: $$NOW, holder, mode: 'on' }` no MESMO
+ * documento da posse, a cada ciclo, tenha ou não ficado com a posse.
+ * O executor da KAS com `-require-crm-node-lease` só age enquanto essa marca
+ * estiver fresca. Um Node com a variável ausente/off, ou apontando para outro
+ * banco/coleção, nunca grava a marca ali, então a KAS fica parada em vez de
+ * virar um segundo dono. O documento já existe porque acquire() roda antes.
+ */
+export async function markCrmNodeParticipant(db, holder = defaultReaperHolder()) {
+    await collectionOf(db).updateOne(
+        { _id: REAPER_LEASE_ID },
+        [{ $set: { 'participants.crmNode': { at: '$$NOW', holder, mode: 'on' } } }]
+    );
+}
+
+/**
+ * Leitura (sem escrita) para conferir a configuração antes da troca.
+ * @returns {Promise<{exists:boolean, holder?:string, live?:boolean, msLeft?:number, nodeMarkerAgeMs?:number|null, nodeMarkerHolder?:string|null}>}
+ */
+export async function reaperLeaseSnapshot(db) {
+    const [doc] = await collectionOf(db).aggregate([
+        { $match: { _id: REAPER_LEASE_ID } },
+        { $project: {
+            holder: 1,
+            live: { $gt: ['$expiresAt', '$$NOW'] },
+            msLeft: { $subtract: ['$expiresAt', '$$NOW'] },
+            nodeMarkerAgeMs: { $cond: [{ $ifNull: ['$participants.crmNode.at', false] }, { $subtract: ['$$NOW', '$participants.crmNode.at'] }, null] },
+            nodeMarkerHolder: { $ifNull: ['$participants.crmNode.holder', null] }
+        } }
+    ]).toArray();
+    if (!doc) return { exists: false };
+    return { exists: true, holder: doc.holder ?? null, live: !!doc.live, msLeft: Number(doc.msLeft), nodeMarkerAgeMs: doc.nodeMarkerAgeMs == null ? null : Number(doc.nodeMarkerAgeMs), nodeMarkerHolder: doc.nodeMarkerHolder };
+}
+
+/**
  * Posse com token. Mesma semântica de crmeventstore.Lease (Go).
  */
 export function createReaperLease({ db, holder = defaultReaperHolder(), ttlMs = DEFAULT_REAPER_LEASE_TTL_MS } = {}) {

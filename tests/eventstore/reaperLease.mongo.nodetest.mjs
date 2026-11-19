@@ -11,9 +11,9 @@ import mongoose from 'mongoose';
 import EventStore from '../../models/EventStore.js';
 import {
   createReaperLease, liveReaperLeaseHolder, sharedLeaseModeFromEnv, reaperLeaseTtlFromEnv,
-  REAPER_LEASE_COLLECTION, REAPER_LEASE_ID, ReaperLeaseLostError
+  REAPER_LEASE_COLLECTION, REAPER_LEASE_ID, ReaperLeaseLostError, reaperLeaseSnapshot
 } from '../../infrastructure/events/reaperLease.js';
-import { reapStuckEvents } from '../../crons/eventReaper.cron.js';
+import { reapStuckEvents, runReaperCycle, initEventReaperCron } from '../../crons/eventReaper.cron.js';
 
 const URI = process.env.MONGO_TXN_TEST_URI;
 const skip = !URI ? 'MONGO_TXN_TEST_URI não definido' : false;
@@ -129,4 +129,92 @@ test('concorrência: 6 disputas simultâneas, exatamente 1 vence', { skip }, asy
   const leases = Array.from({ length: 6 }, (_, i) => createReaperLease({ holder: `h${i}`, ttlMs: 5000 }));
   const won = await Promise.all(leases.map((l) => l.acquire()));
   assert.equal(won.filter(Boolean).length, 1);
+});
+
+// ── Matriz de configuração: variável ausente, off, on, inválida e divergente da KAS ──
+// "KAS" abaixo = createReaperLease com holder kas:*, mesma semântica do Go
+// (internal/legacy/crmeventstore/lease.go; a guarda -require-crm-node-lease
+// tem testes próprios em lease_crmnode_test.go).
+const withEnv = async (vars, fn) => {
+  const saved = {};
+  for (const k of Object.keys(vars)) { saved[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  try { return await fn(); } finally { for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+};
+const listLeaseCollections = async () => (await mongoose.connection.db.listCollections({ name: REAPER_LEASE_COLLECTION }).toArray()).length;
+
+test('matriz: variável AUSENTE = off. Recupera sem posse, não cria documento nem marca', { skip }, async () => {
+  const ids = await seedStuck(3);
+  await withEnv({ EVENT_REAPER_SHARED_LEASE: undefined }, () => runReaperCycle());
+  const after = await EventStore.find({ eventId: { $in: ids } }).lean();
+  assert.ok(after.every((e) => e.status === 'pending'), 'recuperou como o reaper antigo');
+  assert.equal(await leaseDoc(), null, 'nenhum documento de posse criado');
+  assert.ok(await listLeaseCollections() <= 1);
+});
+
+test('matriz: OFF com posse viva da KAS. Node pula o ciclo e não grava nada', { skip }, async () => {
+  const ids = await seedStuck(3);
+  const kas = createReaperLease({ holder: 'kas:B', ttlMs: 10_000 });
+  await kas.acquire();
+  await withEnv({ EVENT_REAPER_SHARED_LEASE: 'off' }, () => runReaperCycle());
+  const after = await EventStore.find({ eventId: { $in: ids } }).lean();
+  assert.ok(after.every((e) => e.status === 'processing'), 'Node off não tocou em nada');
+  assert.equal((await reaperLeaseSnapshot()).nodeMarkerAgeMs, null, 'off nunca grava a marca de participação');
+});
+
+test('matriz: OFF + KAS SEM a guarda = dois responsáveis (incompatível)', { skip }, async () => {
+  // O Node off confere a posse só no início do ciclo. Se a KAS assumir depois
+  // dessa conferência, os dois recuperam no mesmo intervalo. A escrita condicional
+  // evita gravar o MESMO evento duas vezes, mas há dois donos agindo juntos.
+  const ids = await seedStuck(6);
+  assert.equal(await liveReaperLeaseHolder(), null, 'Node off conferiu: sem posse viva');
+  const kas = createReaperLease({ holder: 'kas:B', ttlMs: 10_000 });
+  assert.equal(await kas.acquire(), true, 'KAS sem a guarda assume logo depois');
+  const kasRun = await reapStuckEvents({ lease: kas, alert: () => {}, batchSize: 3 });
+  const nodeRun = await reapStuckEvents({ lease: null, alert: () => {} }); // ciclo do Node off seguindo
+  assert.equal(kasRun.reset, 3);
+  assert.equal(nodeRun.reset, 3, 'Node off recuperou sem posse enquanto a KAS tinha a posse viva');
+  const after = await EventStore.find({ eventId: { $in: ids } }).lean();
+  assert.ok(after.every((e) => e.recoveryCount === 1), 'nenhum evento gravado duas vezes, mas dois donos agiram');
+});
+
+test('matriz: ON. Disputa a posse, cerca as escritas e grava a marca de participação', { skip }, async () => {
+  const ids = await seedStuck(2);
+  await withEnv({ EVENT_REAPER_SHARED_LEASE: 'on' }, () => runReaperCycle());
+  const snap = await reaperLeaseSnapshot();
+  assert.match(snap.holder, /^crm-node:/);
+  assert.ok(snap.nodeMarkerAgeMs !== null && snap.nodeMarkerAgeMs < 5000, 'marca fresca');
+  assert.ok((await leaseDoc()).fencedWriteAt instanceof Date, 'escritas cercadas');
+  const after = await EventStore.find({ eventId: { $in: ids } }).lean();
+  assert.ok(after.every((e) => e.status === 'pending'));
+});
+
+test('matriz: ON com a KAS dona. Node pula, mas renova a marca (a KAS com a guarda segue agindo)', { skip }, async () => {
+  const ids = await seedStuck(2);
+  const kas = createReaperLease({ holder: 'kas:B', ttlMs: 10_000 });
+  await kas.acquire();
+  await withEnv({ EVENT_REAPER_SHARED_LEASE: 'on' }, () => runReaperCycle());
+  const snap = await reaperLeaseSnapshot();
+  assert.equal(snap.holder, 'kas:B');
+  assert.ok(snap.nodeMarkerAgeMs !== null && snap.nodeMarkerAgeMs < 5000);
+  const after = await EventStore.find({ eventId: { $in: ids } }).lean();
+  assert.ok(after.every((e) => e.status === 'processing'), 'Node sem posse não grava');
+});
+
+test('matriz: reversão ON → OFF. A marca para de ser renovada (a KAS com a guarda para em até max-age)', { skip }, async () => {
+  await withEnv({ EVENT_REAPER_SHARED_LEASE: 'on' }, () => runReaperCycle());
+  const t1 = (await leaseDoc()).participants.crmNode.at.getTime();
+  await sleep(50);
+  await withEnv({ EVENT_REAPER_SHARED_LEASE: 'off' }, () => runReaperCycle());
+  const t2 = (await leaseDoc()).participants.crmNode.at.getTime();
+  assert.equal(t2, t1, 'off não renova a marca');
+});
+
+test('matriz: valor INVÁLIDO derruba a subida do cron (não roda calado)', () => {
+  const saved = process.env.EVENT_REAPER_SHARED_LEASE;
+  process.env.EVENT_REAPER_SHARED_LEASE = 'sim';
+  try {
+    assert.throws(() => initEventReaperCron(), /EVENT_REAPER_SHARED_LEASE inválido/);
+  } finally {
+    if (saved === undefined) delete process.env.EVENT_REAPER_SHARED_LEASE; else process.env.EVENT_REAPER_SHARED_LEASE = saved;
+  }
 });

@@ -30,7 +30,7 @@ import { MAX_RECOVERIES, legacyFenceFromEnv, legacyAbandonedFilter } from '../in
 import mongoose from 'mongoose';
 import {
     createReaperLease, liveReaperLeaseHolder, sharedLeaseModeFromEnv, reaperLeaseTtlFromEnv,
-    ReaperLeaseLostError
+    ReaperLeaseLostError, markCrmNodeParticipant
 } from '../infrastructure/events/reaperLease.js';
 export { MAX_RECOVERIES };
 
@@ -221,7 +221,11 @@ async function runOnce() {
         let lease = null;
         if (sharedLeaseModeFromEnv() === 'on') {
             reaperLease ??= createReaperLease({ ttlMs: reaperLeaseTtlFromEnv() });
-            if (!(await reaperLease.acquire())) {
+            const acquired = await reaperLease.acquire();
+            // Marca de participação: a KAS (-require-crm-node-lease) só age com ela fresca.
+            await markCrmNodeParticipant(undefined, reaperLease.holder)
+                .catch((e) => log.warn('reaper_participant_mark_failed', e.message));
+            if (!acquired) {
                 const h = await liveReaperLeaseHolder();
                 log.info('reaper_not_leader', `Outro dono tem a posse do reaper (${h?.holder ?? 'desconhecido'}); ciclo pulado`, { holder: h?.holder });
                 console.log(`[EventReaper] ⏭️ posse com ${h?.holder ?? 'outro dono'}; ciclo pulado`);
@@ -263,8 +267,10 @@ export function initEventReaperCron() {
     console.log('🔄 Inicializando Event Reaper Cron...');
 
     // Valida a configuração da posse antes de agendar (valor inválido derruba a subida).
-    sharedLeaseModeFromEnv();
+    const leaseMode = sharedLeaseModeFromEnv();
     reaperLeaseTtlFromEnv();
+    // Linha procurada na conferência antes da troca (docs/EVENTSTORE_OWNERSHIP.md §11).
+    console.log(`[EventReaper] posse compartilhada: ${leaseMode} (EVENT_REAPER_SHARED_LEASE=${process.env.EVENT_REAPER_SHARED_LEASE ?? '(ausente)'})`);
     const intervalMs = msFromEnv('EVENT_REAPER_INTERVAL_MS', 5 * 60 * 1000, 500);
     const warmupMs = msFromEnv('EVENT_REAPER_WARMUP_MS', 2 * 60 * 1000, 0);
 
@@ -301,3 +307,6 @@ export function initEventReaperCron() {
 }
 
 export default { initEventReaperCron };
+
+/** Um ciclo completo do cron (decisão on/off + recuperação), para os testes da posse. */
+export { runOnce as runReaperCycle };
