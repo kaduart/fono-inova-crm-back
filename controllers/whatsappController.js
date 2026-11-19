@@ -12,6 +12,7 @@ import Logger from '../services/utils/Logger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import { manualIdempotencyKey, sendManualOnce, manualSendResponse } from "../services/communication/manualSendOnce.js";
+import { createHash } from "node:crypto";
 
 import { withLeadLock } from '../services/LockManager.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
@@ -32,6 +33,10 @@ export const whatsappController = {
     async sendTemplate(req, res) {
         try {
             const { phone, template, params = [], leadId } = req.body;
+            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            if (keyError) {
+                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+            }
             if (!phone || !template) {
                 return sendApiError(
                   res,
@@ -42,7 +47,17 @@ export const whatsappController = {
                 );
             }
             const to = normalizeE164BR(phone);
-            const result = await sendTemplateMessage({ to, template, params, lead: leadId });
+            // Idempotency-Key: clique duplo / retentativa do mesmo template = uma tentativa no provedor.
+            // Sem a chave, comportamento antigo. Prefixo "tpl:" separa do texto manual.
+            const sendOnce = await sendManualOnce({
+                key: manualKey && `tpl:${manualKey}`,
+                actorId: req.user?._id || req.user?.id,
+                destination: to,
+                send: () => sendTemplateMessage({ to, template, params, lead: leadId })
+            });
+            const notSent = manualSendResponse(sendOnce.outcome, sendOnce.providerMessageId);
+            if (notSent) return res.status(notSent.status).json(notSent.body);
+            const result = sendOnce.result;
 
             const waMessageId = result?.waMessageId || result?.messages?.[0]?.id || null;
 
@@ -1227,6 +1242,10 @@ export const whatsappController = {
         try {
             const { phone, type, caption, leadId } = req.body;
             const file = req.file;
+            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            if (keyError) {
+                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+            }
 
             if (!phone || !file || !type) {
                 return sendApiError(
@@ -1255,15 +1274,30 @@ export const whatsappController = {
 
             const { sendWhatsAppMediaMessage } = await import('../services/whatsappService.js');
 
-            // Enviar para WhatsApp
-            const result = await sendWhatsAppMediaMessage({
-                to,
-                file: file.buffer,
-                type, // 'image', 'audio', 'video', 'document'
-                caption: caption || undefined,
-                filename: file.originalname,
-                lead: leadId || null
+            // Enviar para WhatsApp. Idempotency-Key: o reenvio do MESMO arquivo (clique duplo,
+            // retry depois de timeout) não manda a mídia de novo. A chave inclui o hash do
+            // arquivo: mesma chave com outro arquivo é outro envio. Sem chave, comportamento antigo.
+            const fileHash = createHash('sha256').update(file.buffer).digest('hex').slice(0, 16);
+            const sendOnce = await sendManualOnce({
+                key: manualKey && `media:${manualKey}:${fileHash}`,
+                actorId: req.user?._id || req.user?.id,
+                destination: to,
+                send: () => sendWhatsAppMediaMessage({
+                    to,
+                    file: file.buffer,
+                    type, // 'image', 'audio', 'video', 'document'
+                    caption: caption || undefined,
+                    filename: file.originalname,
+                    lead: leadId || null
+                })
             });
+            const notSent = manualSendResponse(sendOnce.outcome, sendOnce.providerMessageId);
+            if (notSent) {
+                res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+                res.header('Access-Control-Allow-Credentials', 'true');
+                return res.status(notSent.status).json(notSent.body);
+            }
+            const result = sendOnce.result;
 
             // Adicionar headers CORS manualmente
             res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
