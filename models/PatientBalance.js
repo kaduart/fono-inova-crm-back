@@ -101,6 +101,9 @@ const balanceTransactionSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    // eventId do Outbox que gerou o lançamento (caminho legado do balanceWorker):
+    // chave de idempotência persistente, recusa o mesmo evento duas vezes.
+    sourceEventId: { type: String, default: null },
     // 🆕 V4: ID de correlação para idempotência (1 appointment = 1 débito)
     correlationId: {
         type: String,
