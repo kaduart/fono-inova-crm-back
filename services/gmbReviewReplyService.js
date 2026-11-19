@@ -24,7 +24,9 @@ const thanks = ['Agradecemos por compartilhar sua avaliação!', 'Muito obrigado
 /** Pure, deterministic and free of network, database or AI-provider calls. */
 export function buildGmbReviewReply(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Corpo inválido');
-  const { reviewId, comment = '', starRating, existingReply } = input;
+  const { reviewId, starRating, existingReply } = input;
+  // Google/Make send null (not undefined) for star-only reviews; treat it as empty.
+  const comment = input.comment ?? '';
   if (typeof reviewId !== 'string' || !reviewId.trim() || reviewId.length > 1024) throw new TypeError('reviewId obrigatório');
   if (typeof comment !== 'string' || comment.length > 10000) throw new TypeError('comment inválido');
   const rating = stars[starRating] ?? starRating;

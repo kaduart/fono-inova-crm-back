@@ -20,6 +20,14 @@ test('only stars, stable replay and existing replies', () => {
   assert.deepEqual(buildGmbReviewReply(r), buildGmbReviewReply(r));
   assert.equal(buildGmbReviewReply(review('', { existingReply: 'Obrigado!' })).reason, 'already_replied');
 });
+test('star-only review with null or missing comment gets the generic thanks', () => {
+  const empty = buildGmbReviewReply(review(''));
+  for (const input of [review(null), { reviewId: 'review-example', starRating: 'FIVE' }]) {
+    const r = buildGmbReviewReply(input);
+    assert.equal(r.eligible, true);
+    assert.equal(r.reply, empty.reply);
+  }
+});
 test('complaints and low ratings require manual review', () => {
   for (const comment of ['Ótima equipe, mas atrasou.', 'Atendimento ruim', 'Não fui bem atendido', 'Precisa melhorar']) assert.equal(buildGmbReviewReply(review(comment)).eligible, false);
   assert.equal(buildGmbReviewReply(review('Tudo bem', { starRating: 3 })).eligible, false);
