@@ -154,6 +154,7 @@ jobs:
           npm run test:envios-whatsapp-web
           npm run test:envios-manual-email
           npm run test:envios-template-midia
+          npm run test:envios-item4
           npm run test:envios-inventario
       - name: Dispatchers do Outbox (contagem pelo código e dois ao mesmo tempo)
         env:

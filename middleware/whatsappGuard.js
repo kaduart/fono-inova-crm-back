@@ -15,6 +15,7 @@ import { getIo } from '../config/socket.js';
 import Logger from '../services/utils/Logger.js';
 import { sendTemplateMessage } from '../services/whatsappService.js';
 import { normalizeE164BR } from '../utils/phone.js';
+import { guardedSend, DeliveryOutcome } from '../infrastructure/delivery/deliveryGuard.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const logger = new Logger('WhatsAppGuard');
@@ -70,6 +71,29 @@ const AlertLog = mongoose.models.AlertLog || mongoose.model('AlertLog', AlertLog
 const ADMIN_PHONE = process.env.ADMIN_ALERT_PHONE; // Seu número pra receber alertas
 const ALERT_COOLDOWN = 30 * 60 * 1000; // 30 minutos entre alertas iguais
 
+/**
+ * Chave do alerta ao admin: um por tipo a cada janela de cooldown. Duas instâncias
+ * (ou dois ciclos) que passem pelo findOne ao mesmo tempo caem na mesma chave e o
+ * provedor é chamado uma vez só.
+ */
+export function adminAlertDeliveryKey(type, now = Date.now()) {
+    return `alert:admin:${type}:${Math.floor(now / ALERT_COOLDOWN)}`;
+}
+
+/** @returns {Promise<boolean>} true se o provedor aceitou agora. */
+export async function sendAdminAlertOnce({ type, text, to, now = Date.now(), send = sendTemplateMessage, guard = guardedSend }) {
+    const d = await guard({
+        channel: 'whatsapp',
+        deliveryKey: adminAlertDeliveryKey(type, now),
+        destination: to,
+        send: () => send({ to, template: 'alerta_sistema', params: [text] })
+    });
+    if (d.outcome !== DeliveryOutcome.SENT) {
+        logger.info(`[ALERT] alerta ${type} não reenviado (${d.outcome})`);
+    }
+    return d.outcome === DeliveryOutcome.SENT;
+}
+
 async function sendAlert(type, message, details = {}) {
     try {
         // Evita spam de alertas
@@ -90,14 +114,15 @@ async function sendAlert(type, message, details = {}) {
         if (ADMIN_PHONE && type !== 'error') { // erros não mandam WhatsApp (pode ser muito)
             try {
                 const emoji = type === 'silence' ? '🚨' : type === 'anomaly' ? '⚠️' : 'ℹ️';
-                await sendTemplateMessage({
-                    to: normalizeE164BR(ADMIN_PHONE),
-                    template: 'alerta_sistema',
-                    params: [`${emoji} ${message}`]
+                const sent = await sendAdminAlertOnce({
+                    type,
+                    text: `${emoji} ${message}`,
+                    to: normalizeE164BR(ADMIN_PHONE)
                 });
-                
-                await AlertLog.findByIdAndUpdate(alert._id, { sentToAdmin: true });
-                logger.info(`[ALERT] WhatsApp enviado para admin: ${message}`);
+                if (sent) {
+                    await AlertLog.findByIdAndUpdate(alert._id, { sentToAdmin: true });
+                    logger.info(`[ALERT] WhatsApp enviado para admin: ${message}`);
+                }
             } catch (err) {
                 logger.error(`[ALERT] Falha ao enviar WhatsApp: ${err.message}`);
             }

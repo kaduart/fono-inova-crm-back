@@ -2610,9 +2610,15 @@ async function _getOptimizedAmandaResponseInternal({
 
         // Reprocessar a mesma mensagem recebida (retry do job, reentrega do webhook)
         // não manda a localização de novo: a chave vem do id da mensagem de entrada.
-        const onceForInbound = (part, send) => messageId
-            ? guardedSend({ channel: 'whatsapp', deliveryKey: `amanda_location:${messageId}:${part}`, destination: lead.contact.phone, send })
-            : send();
+        // Sem id da mensagem de entrada não há chave estável: não envia direto
+        // (item 4 do anti-reenvio). A resposta segue pelo fluxo normal da fila.
+        const onceForInbound = (part, send) => {
+            if (!messageId) {
+                console.warn(JSON.stringify({ msg: 'amanda_location_skipped_without_message_id', part }));
+                return null;
+            }
+            return guardedSend({ channel: 'whatsapp', deliveryKey: `amanda_location:${messageId}:${part}`, destination: lead.contact.phone, send });
+        };
 
         // 1️⃣ envia o pin real (mensagem type: "location")
         await onceForInbound('pin', () => sendLocationMessage({
@@ -5574,20 +5580,9 @@ function tryManualResponse(normalizedText, context = {}, flags = {}, lead = {}) 
         const coords = getManual("localizacao", "coords");
         const addrText = getManual("localizacao", "endereco");
 
-        // Se o cliente pediu só o local, envia o pin de localização real
-        if (coords?.latitude && coords?.longitude) {
-            sendLocationMessage({
-                to: lead.contact.phone,
-                lead: lead._id,
-                contactId: lead.contact._id,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                name: coords.name,
-                address: coords.address,
-                url: coords.url,
-                sentBy: "amanda"
-            });
-        }
+        // Caminho legado (tryManualResponse está desligado): o pin era enviado direto,
+        // sem chave nem espera. Removido no item 4 do anti-reenvio; só o texto volta.
+        void coords;
 
         // E ainda retorna texto normal no chat
         return addrText;

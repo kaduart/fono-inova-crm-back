@@ -10,6 +10,7 @@ import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { requireStaff, requireStaffOrAgenda, requireAdmin } from '../middleware/requireRole.js';
+import { manualIdempotencyKey, manualKeyPolicy, sendManualOnce, manualSendResponse } from '../services/communication/manualSendOnce.js';
 
 const router = express.Router();
 
@@ -30,13 +31,30 @@ router.use(whatsappGuard);
 router.post('/send', async (req, res) => {
   try {
     const { phone, message } = req.body;
-    
+    // Idempotency-Key: duplo clique / retry de rede = uma tentativa no VPS. Política
+    // própria (a Agenda Externa também chama esta rota e pode não mandar a chave):
+    // MANUAL_SEND_REQUIRE_KEY_VPS=off|log|on, padrão log.
+    const { key, error: keyError, status: keyStatus, code: keyCode } = manualIdempotencyKey(req, {
+      route: 'whatsappVPS.send',
+      policy: manualKeyPolicy({ MANUAL_SEND_REQUIRE_KEY: process.env.MANUAL_SEND_REQUIRE_KEY_VPS })
+    });
+    if (keyError) {
+      return sendApiError(res, new AppError(keyCode || 'BAD_REQUEST', keyError, { status: keyStatus || 400 }), req);
+    }
+
     if (!phone || !message) {
       return sendApiError(res, new AppError('BAD_REQUEST', 'phone e message são obrigatórios', { status: 400 }), req);
     }
-    
-    const result = await sendViaVPS(phone, message);
-    res.json({ success: true, ...result });
+
+    const sendOnce = await sendManualOnce({
+      key: key && `vps:${key}`,
+      actorId: req.user?._id || req.user?.id,
+      destination: phone,
+      send: () => sendViaVPS(phone, message)
+    });
+    const notSent = manualSendResponse(sendOnce.outcome, sendOnce.providerMessageId);
+    if (notSent) return res.status(notSent.status).json(notSent.body);
+    res.json({ success: true, ...sendOnce.result });
     
   } catch (error) {
     console.error('[WhatsApp VPS] Erro:', error);

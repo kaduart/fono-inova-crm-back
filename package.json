@@ -86,7 +86,8 @@
     "sanity:financial:current": "node -e \"const d=new Date(); require('child_process').spawnSync('node', ['scripts/financial-sanity-check.v2.js', d.getFullYear(), d.getMonth()+1], {stdio: 'inherit'})\"",
     "snapshot:rebuild": "node -e \"const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); const y=d.getFullYear(); console.log('POST /api/v2/financial/dashboard/rebuild-snapshot with:', {startDate:`${y}-${m}-01`, endDate:`${y}-${m}-${new Date(y,d.getMonth()+1,0).getDate()}`, clearFirst:true})\"",
     "checar:replica-local": "node scripts/isolado/checar-replica-local.mjs",
-    "test:envios-template-midia": "node --experimental-test-module-mocks --test --test-force-exit tests/delivery/manualTemplateMedia.mongo.nodetest.mjs"
+    "test:envios-template-midia": "node --experimental-test-module-mocks --test --test-force-exit tests/delivery/manualTemplateMedia.mongo.nodetest.mjs",
+    "test:envios-item4": "node --experimental-test-module-mocks --test --test-force-exit tests/delivery/item4Closures.mongo.nodetest.mjs"
   },
   "keywords": [],
   "author": "",

@@ -45,8 +45,9 @@ run "Posse do reaper compartilhada Node/KAS (16)"         npm run -s test:reaper
 run "Envios: anti-reenvio, provedor simulado (9)"        npm run -s test:envios-anti-reenvio
 run "Envios: fila do WhatsApp Web com o guard (6)"       npm run -s test:envios-whatsapp-web
 run "Envios: manual com Idempotency-Key e e-mail convênio (9)" npm run -s test:envios-manual-email
-run "Envios: template e mídia manuais pelo controller (6)" npm run -s test:envios-template-midia
-run "Envios: inventário dos caminhos de envio (6)"       npm run -s test:envios-inventario
+run "Envios: template e mídia manuais pelo controller (8)" npm run -s test:envios-template-midia
+run "Envios: política sem chave, alerta, VPS e incertos (9)" npm run -s test:envios-item4
+run "Envios: inventário dos caminhos de envio (14)"      npm run -s test:envios-inventario
 run "Dispatchers: contagem pelo código (3)"              npm run -s test:dispatchers-contagem
 run "Dispatchers: dois ao mesmo tempo (2)"               env REDIS_TEST_URL="redis://127.0.0.1:${RPORT}/7" npm run -s test:dispatchers-concorrentes
 run "Event Store: posse, BullMQ real, versões mistas, retry auditado (45)" npm run -s test:eventstore-validacao

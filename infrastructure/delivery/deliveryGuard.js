@@ -39,7 +39,8 @@ const NOT_SENT_PATTERNS = [
     /invalid (phone|recipient|email)/i,
     /não está conectado.*Escaneie o QR code/i,
     // Configuração ausente: o cliente do provedor nem foi criado.
-    /(API_KEY|credencial|chave).*não configurad[ao]/i
+    /(API_KEY|credencial|chave).*não configurad[ao]/i,
+    /VPS_WHATSAPP_(URL|TOKEN).*não configurad[ao]s?/i
 ];
 
 /**
@@ -212,6 +213,68 @@ export async function resolveUncertainDelivery(deliveryKey, { as, by, note } = {
         }
     );
     return res.modifiedCount === 1;
+}
+
+/**
+ * Tentativa abandonada (status `sending` com lease vencido) vira `unknown`, a mesma
+ * transição que guardedSend faz quando alguém tenta a chave de novo. Usada pela tela
+ * de envios incertos para que o operador possa decidir sem esperar uma nova tentativa.
+ * @returns {Promise<boolean>} true se marcou agora.
+ */
+export async function markAbandonedAsUnknown(deliveryKey, now = new Date()) {
+    const res = await coll().updateOne(
+        { _id: deliveryKey, status: 'sending', leaseUntil: { $lte: now } },
+        {
+            $set: { status: 'unknown', finishedAt: now, lastError: 'ATTEMPT_ABANDONED_LEASE_EXPIRED' },
+            $unset: { token: '', leaseUntil: '' },
+            $push: { history: { at: now, status: 'unknown', reason: 'lease_expired' } }
+        }
+    );
+    return res.modifiedCount === 1;
+}
+
+/** Tipo do envio pelo prefixo da chave (sem dados da pessoa). */
+export function deliveryKind(deliveryKey) {
+    const parts = String(deliveryKey || '').split(':');
+    if (parts[1] === 'manual') {
+        // wa:manual:<ator>:<tpl|media|...>:... ou wa:manual:<ator>:<chave>:<hash>
+        const sub = ['tpl', 'media', 'vps'].includes(parts[3]) ? parts[3] : 'texto';
+        return `${parts[0]}:manual:${sub}`;
+    }
+    return parts.slice(0, 2).join(':') || 'desconhecido';
+}
+
+/** Erro do provedor sem números longos (telefone, documento). */
+export function redactDeliveryError(text) {
+    if (!text) return null;
+    return String(text).replace(/\+?\d[\d\s().-]{7,}\d/g, '[número]').slice(0, 200);
+}
+
+/**
+ * Envios `unknown` e tentativas abandonadas, para decisão humana. Não devolve
+ * telefone, texto nem hash do destino.
+ */
+export async function listUncertainDeliveries({ limit = 100, now = new Date() } = {}) {
+    const lim = Math.min(Math.max(Number(limit) || 100, 1), 500);
+    const filter = { $or: [{ status: 'unknown' }, { status: 'sending', leaseUntil: { $lte: now } }] };
+    const [docs, total] = await Promise.all([
+        coll().find(filter, { projection: { destinationHash: 0, token: 0 } }).sort({ createdAt: -1 }).limit(lim).toArray(),
+        coll().countDocuments(filter)
+    ]);
+    return {
+        total,
+        items: docs.map((d) => ({
+            key: d._id,
+            kind: deliveryKind(d._id),
+            channel: d.channel || null,
+            status: d.status === 'sending' ? 'abandoned' : d.status,
+            attempts: d.attempts || 1,
+            createdAt: d.createdAt || null,
+            finishedAt: d.finishedAt || null,
+            reason: d.status === 'sending' ? 'lease_expired' : (d.history?.at?.(-1)?.reason || null),
+            lastError: redactDeliveryError(d.lastError)
+        }))
+    };
 }
 
 export async function ensureDeliveryIndexes() {

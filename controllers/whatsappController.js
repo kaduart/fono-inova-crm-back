@@ -33,9 +33,9 @@ export const whatsappController = {
     async sendTemplate(req, res) {
         try {
             const { phone, template, params = [], leadId } = req.body;
-            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            const { key: manualKey, error: keyError, status: keyStatus, code: keyCode } = manualIdempotencyKey(req, { route: 'sendTemplate' });
             if (keyError) {
-                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+                return sendApiError(res, new AppError(keyCode || 'BAD_REQUEST', keyError, { status: keyStatus || 400 }), req);
             }
             if (!phone || !template) {
                 return sendApiError(
@@ -110,9 +110,9 @@ export const whatsappController = {
             } = req.body;
             console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
             console.log('✅ [sendText] VERSÃO CORRIGIDA — pausa Amanda ANTES do envio');
-            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            const { key: manualKey, error: keyError, status: keyStatus, code: keyCode } = manualIdempotencyKey(req, { route: 'sendText' });
             if (keyError) {
-                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+                return sendApiError(res, new AppError(keyCode || 'BAD_REQUEST', keyError, { status: keyStatus || 400 }), req);
             }
             if (!phone || !text) {
                 return sendApiError(
@@ -805,9 +805,9 @@ export const whatsappController = {
     async sendManualMessage(req, res) {
         try {
             const { leadId, text, userId, phone } = req.body;
-            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            const { key: manualKey, error: keyError, status: keyStatus, code: keyCode } = manualIdempotencyKey(req, { route: 'sendManualMessage' });
             if (keyError) {
-                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+                return sendApiError(res, new AppError(keyCode || 'BAD_REQUEST', keyError, { status: keyStatus || 400 }), req);
             }
 
             let lead = null;
@@ -1242,9 +1242,9 @@ export const whatsappController = {
         try {
             const { phone, type, caption, leadId } = req.body;
             const file = req.file;
-            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            const { key: manualKey, error: keyError, status: keyStatus, code: keyCode } = manualIdempotencyKey(req, { route: 'sendMedia' });
             if (keyError) {
-                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+                return sendApiError(res, new AppError(keyCode || 'BAD_REQUEST', keyError, { status: keyStatus || 400 }), req);
             }
 
             if (!phone || !file || !type) {

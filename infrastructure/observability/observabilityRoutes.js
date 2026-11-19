@@ -23,6 +23,7 @@ import { getQueue } from '../queue/queueConfig.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
 import { AppError } from '../../errors/AppError.js';
 import { staffOnly } from '../../middleware/observabilityAccess.js';
+import { mountUncertainDeliveries } from '../delivery/uncertainDeliveriesRoutes.js';
 
 const router = Router();
 
@@ -176,5 +177,8 @@ router.get('/dead-letters', auth, authorize(['admin']), getDeadLettersHandler);
 router.get('/dead-letters/:eventId', auth, authorize(['admin']), getDeadLetterDetailsHandler);
 router.post('/dead-letters/:eventId/retry', auth, authorize(['admin']), retryDeadLetterHandler);
 router.post('/dead-letters/retry-batch', auth, authorize(['admin']), retryBatchDeadLettersHandler);
+
+// Envios com resultado incerto (WhatsApp/e-mail): listar e registrar a decisão humana. Só admin.
+mountUncertainDeliveries(router);
 
 export default router;

@@ -87,16 +87,29 @@ A resposta automática da Amanda pela fila (`whatsappAutoReplyWorker`) já usava
 
 Nota: no `notificationOrchestratorWorker`, o e-mail é um **mock**, que só registra em log. Não há envio real de e-mail por esse caminho hoje.
 
-## 4. Fora do escopo (pendências)
+## 4. Fechamentos do item 4 e o que segue fora
 
-**Classificação do item 4: PARCIAL.** Os caminhos abaixo continuam sem proteção completa:
+### 4.1 Feito neste ciclo
 
-- **Manual sem chave.** Texto, template e mídia só ficam protegidos quando o cliente manda `Idempotency-Key`. O back aceita requisição sem chave (compatibilidade com front antigo em cache, scripts e integrações), e essas requisições enviam como antes. Impedimento concreto: tornar a chave obrigatória quebra qualquer cliente que ainda não a envia. Isso só pode virar regra depois que o front novo estiver em produção, com uma janela de observação (log de requisições sem chave). É decisão de ativação, não de código.
-- **Janela incerta do provedor.** Meta Cloud API, WhatsApp Web e VPS não deduplicam. Se a resposta se perde, o envio fica `unknown` e nada é reenviado sozinho; alguém precisa conferir no aparelho. Impedimento concreto: só o provedor poderia fechar essa janela, e nenhum dos três oferece chave de idempotência (seção 6).
-- **Sem tela para resolver `unknown`.** A função `resolveUncertainDelivery` existe e é auditada, mas não há rota nem tela que a chame.
-- **Texto livre da Amanda fora da fila.** Na rota ativa não existe: `runOrchestrator` → `WhatsAppOrchestrator` (FSM) / agente Amanda só devolvem texto, e quem envia é o `whatsappAutoReplyWorker` pela fila (`amanda-reply:<lead>:<wamid>`, guarda `wa:send:`). Os envios diretos que restam estão no `orchestrators/AmandaOrchestrator.js` legado: localização sem id de entrada (cai em envio sem chave) e `tryManualResponse`, cuja chamada está comentada. Nenhum módulo de produção importa esse arquivo; só os scripts de `tests-amanda-ouro`. Impedimento concreto para pôr chave ali: sem id da mensagem recebida não existe chave estável, e inventar uma chave (relógio, texto) bloquearia respostas legítimas iguais. O que foi feito: dois testes no inventário. Um falha se algum código de produção voltar a importar o `AmandaOrchestrator`. O outro falha se a rota ativa passar a chamar o provedor direto.
-- **Fora da proteção por decisão:** `middleware/whatsappGuard.js` (alerta ao admin), `routes/whatsappVPS.js` (teste administrativo) e `controllers/authController.js` (cada pedido de senha gera link novo).
-- Índice `status_createdAt`: criado em produção pelo Kadu em 18/11/2026 (script `criar-indices-protecoes.mjs`, só índices).
+- **Manual sem chave: política configurável.** `MANUAL_SEND_REQUIRE_KEY=off|log|on` (padrão `log`), lida a cada requisição em `manualIdempotencyKey`. Vale para texto (2 rotas), template e mídia em `controllers/whatsappController.js`.
+  - `off`: envia sem chave, sem aviso (comportamento antigo).
+  - `log` (padrão): envia sem chave e registra `{"msg":"manual_send_without_key","route":...,"actor":...,"count":...}`. Serve para medir quem ainda manda sem chave antes de exigir.
+  - `on`: recusa com **428 `IDEMPOTENCY_KEY_REQUIRED`**; nada é enviado.
+  - A rota do VPS tem política própria, `MANUAL_SEND_REQUIRE_KEY_VPS` (padrão `log`), porque a Agenda Externa também a chama e pode não mandar a chave.
+- **Envios incertos: rota de decisão (só admin).**
+  - `GET /api/observability/deliveries/uncertain?limit=100`: lista `unknown` e tentativas abandonadas (`sending` com lease vencido). Devolve chave, tipo (`wa:manual:tpl`, `alert:admin`...), tentativas, datas e erro com números mascarados. Não devolve telefone, texto nem hash do destino.
+  - `POST /api/observability/deliveries/resolve` com `{ key, as: 'sent'|'failed', note? }`. `sent` fecha a chave; `failed` libera nova tentativa. Nada é reenviado pela rota; a decisão fica na trilha (`resolvedBy`, `history.reason=manual_resolution`). Envio em andamento (lease válido) ou já resolvido responde 409 `DELIVERY_NOT_UNCERTAIN`.
+  - Tela: `/admin/envios-incertos` no front (só admin).
+- **Alerta ao admin** (`middleware/whatsappGuard.js`): o cooldown por `AlertLog.findOne` não é atômico. Agora o envio passa por `guardedSend` com chave `alert:admin:<tipo>:<janela de 30 min>`; dois ciclos ou duas instâncias na mesma janela chamam o provedor uma vez.
+- **Rota do VPS** (`POST /api/whatsapp-vps/send`): `Idempotency-Key` + `sendManualOnce` com prefixo `vps:`. Erro de configuração do VPS (`VPS_WHATSAPP_URL/TOKEN não configurados`) conta como "não enviado".
+- **AmandaOrchestrator legado:** a localização sem id de entrada não envia mais direto (registra `amanda_location_skipped_without_message_id`), e o pin de `tryManualResponse` (desligado) foi removido. O arquivo continua existindo porque ~40 scripts de teste o importam. O inventário falha se aparecer envio direto fora de `onceForInbound`.
+
+### 4.2 Segue fora (limitação aceita ou decisão de ativação)
+
+- **Exigir a chave em produção** (`MANUAL_SEND_REQUIRE_KEY=on`) é decisão de ativação: só depois de alguns dias em `log` sem `manual_send_without_key` vindo da tela.
+- **Janela incerta do provedor.** Meta Cloud API, WhatsApp Web e VPS não deduplicam. Se a resposta se perde, o envio fica `unknown` e alguém confere no aparelho e decide na tela. Só o provedor fecharia essa janela (seção 6).
+- **Redefinição de senha** (`controllers/authController.js`): fora por decisão; cada pedido gera link novo.
+- Índice `status_createdAt`: criado em produção pelo Kadu em 18/11/2026 (script `criar-indices-protecoes.mjs`, só índices). A listagem de incertos usa esse índice.
 
 A lista completa e classificada está em `tests/delivery/sendPathsInventory.nodetest.mjs`. Um arquivo novo que importe uma função de envio sem classificação faz o teste falhar.
 
@@ -107,9 +120,10 @@ A lista completa e classificada está em `tests/delivery/sendPathsInventory.node
 | `tests/delivery/deliveryGuard.mongo.nodetest.mjs` (`npm run test:envios-anti-reenvio`) | 9 | Envio normal, 10 concorrentes, erro que prova não envio com retry, retries concorrentes, timeout/5xx/desconhecido, queda com lease vivo e vencido, sucesso depois do lease, resolução manual auditada, classificação. Provedor simulado; nenhum envio real |
 | `tests/delivery/whatsappWebDelivery.mongo.nodetest.mjs` (`npm run test:envios-whatsapp-web`) | 6 | Fila `whatsapp-send`: reprocessar não reenvia e devolve o messageId; timeout fica incerto sem retry; desconectado/sem WhatsApp lança e o retry envia; 5 workers simultâneos = 1 envio; jobs diferentes são envios distintos |
 | `tests/delivery/manualEmail.mongo.nodetest.mjs` (`npm run test:envios-manual-email`) | 9 | Envio manual: repetição devolve 200 duplicado, 10 concorrentes = 1 envio, timeout incerto sem reenvio, reinício com reserva abandonada vira incerto, desconectado libera retry, chaves/números diferentes e sem chave enviam. E-mail convênio pelo `executeDelivery` real com Resend simulado: 3 execuções simultâneas = 1 envio e 1 linha; timeout incerto sem reenvio |
-| `tests/delivery/manualTemplateMedia.mongo.nodetest.mjs` (`npm run test:envios-template-midia`) | 6 | Template e mídia manuais pelo controller real com provedor simulado (módulo mockado). 0/6 no código anterior |
+| `tests/delivery/manualTemplateMedia.mongo.nodetest.mjs` (`npm run test:envios-template-midia`) | 8 | Template e mídia manuais pelo controller real com provedor simulado (módulo mockado). 0/6 no código anterior. Mais 2: política `on` recusa 428 sem chamar o provedor; padrão `log` ainda envia |
+| `tests/delivery/item4Closures.mongo.nodetest.mjs` (`npm run test:envios-item4`) | 9 | Política off/log/on; alerta ao admin (3 simultâneos = 1 envio, nova janela envia); VPS pela rota real (mesma chave = 1 envio, timeout incerto sem reenvio, sem chave envia, `on` recusa); incertos por HTTP (401/403, lista sem telefone/hash, decidir `failed`/`sent`, 409 em andamento ou já resolvido) |
 | Front `src/services/__tests__/idempotency.whatsapp.test.ts` (vitest) | 6 | Mesma chave na retentativa, clique duplo sai uma vez, nova chave depois de enviada, 409 em andamento mantém e incerto descarta; mídia (mesmo arquivo mesma chave, outro arquivo outra chave) e template (clique duplo) |
-| `tests/delivery/sendPathsInventory.nodetest.mjs` (`npm run test:envios-inventario`) | 11 | Inventário estático: todo arquivo que importa função de envio está classificado; os protegidos usam o guarda; 4 envios manuais pelo guarda; `AmandaOrchestrator` sem importador de produção; rota ativa da Amanda sem envio direto |
+| `tests/delivery/sendPathsInventory.nodetest.mjs` (`npm run test:envios-inventario`) | 14 | Inventário estático: todo arquivo que importa função de envio está classificado; os protegidos usam o guarda; 4 envios manuais pelo guarda; alerta ao admin e VPS pelo guarda; `AmandaOrchestrator` sem envio direto fora de `onceForInbound` e sem importador de produção; rota ativa da Amanda sem envio direto |
 | `tests/unit/whatsappSendWorker.deliveryGuard.test.js` (vitest) | 6 | Fiação do worker: chave, `job.id` como fallback, os três resultados sem envio, erro que sobe para retry |
 
 ## 6. Limites que dependem do provedor (não prometemos "exatamente uma vez")
