@@ -785,7 +785,7 @@ function initFollowupWatcher() {
 // ======================================================
 // 🚀 INICIA SERVIDOR IMEDIATAMENTE (antes das inicializações)
 // ======================================================
-server.listen(PORT, process.env.ESPELHO === 'true' ? '127.0.0.1' : '0.0.0.0', () => {
+server.listen(PORT, (process.env.ESPELHO === 'true' || process.env.CRM_ISOLADO === 'true') ? '127.0.0.1' : '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
 });

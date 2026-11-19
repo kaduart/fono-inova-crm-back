@@ -60,6 +60,8 @@
     "validar:backup-ficticio": "scripts/backup/validar-restauracao-ficticia.sh",
     "test:dispatchers-contagem": "node --test tests/outbox/dispatcherCount.nodetest.mjs",
     "test:dispatchers-concorrentes": "node --test --test-force-exit tests/outbox/dispatchersConcorrentes.mongo.nodetest.mjs",
+    "test:isolado-trava": "node --test tests/isolado/runtimeGuardIsolado.nodetest.mjs",
+    "test:dispatcher-redis-volta": "node --test --test-force-exit tests/outbox/dispatcherRedisVolta.mongo.nodetest.mjs",
     "agent:cenarios": "node scripts/amanda-agent-cenarios.mjs",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
     "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",
