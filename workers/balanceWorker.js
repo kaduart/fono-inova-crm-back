@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ, getQueue } from '../infrastructure/queue/queueConfig.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
+import { quarantineBalanceEvent } from '../models/BalanceEventQuarantine.js';
 import { runPaymentOperation, operationKeyFor, markSideEffectsDone } from '../services/paymentOperations.js';
 
 
@@ -66,29 +67,53 @@ export function startBalanceWorker() {
     return worker;
 }
 
-// Eventos que chegam à fila balance-update mas NÃO são lançamento no saldo do
-// paciente. Antes caíam em handleLegacy e viravam $inc no PatientBalance:
-//   - INSURANCE_PAYMENT_AUTO_SETTLED: baixa de convênio (dinheiro da operadora).
-//     Payload sem patientId; o upsert criava/somava um PatientBalance com
-//     patient:null (provado em banco descartável: 2 entregas de 180 = 360 no
-//     documento sem paciente), que entra nos totais de dívida.
-// Só registra e sai; patient-projection continua recebendo o evento.
-const NOT_A_BALANCE_ENTRY = new Set(['INSURANCE_PAYMENT_AUTO_SETTLED']);
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTRATO DO CONSUMIDOR DE SALDO (fila balance-update)
+//
+// Produtores reais encontrados no código (inventário de 19/11/2026):
+//   BALANCE_DEBIT_REQUESTED   ← routes/balance.v2.js  (débito manual/fiado)  → handleDebit
+//   BALANCE_CREDIT_REQUESTED  ← routes/balance.v2.js  (crédito direto)       → handleCredit
+//   PAYMENT_UPDATED           ← routes/payment.v2.js  (PATCH /v2/payments/:id)
+//   PAYMENT_RECEIVED          ← workers/paymentWorker.js
+//   INSURANCE_PAYMENT_AUTO_SETTLED ← services/autoInsuranceSettlementService.js (Outbox)
+//   BALANCE_UPDATE_REQUESTED, PAYMENT_REFUNDED, PAYMENT_DELETED: roteados, sem produtor.
+//
+// Onde o saldo muda de verdade em cada fluxo legítimo:
+//   débito ......... BALANCE_DEBIT_REQUESTED (aqui)
+//   crédito ........ BALANCE_CREDIT_REQUESTED (aqui)
+//   baixa .......... transitionPaymentStatus(reconcilePatientBalance) na transação do PATCH
+//   estorno ........ paymentStatusService (ledger) na transação do PATCH
+//   ajuste de valor  adjustOpenDebitForPaymentAmount na transação do PATCH
+// Por isso PAYMENT_UPDATED não move saldo aqui: o ajuste já foi feito, uma vez, junto com a
+// edição. Antes, todo tipo fora de débito/crédito caía num caminho legado que lançava o valor
+// cheio do payload como débito (edição de pagamento, liquidação de convênio sem paciente).
+//
+// Fora do contrato (tipo desconhecido, PAYMENT_UPDATED no formato antigo, os demais tipos
+// roteados): NÃO altera saldo e NÃO some — vai para balance_event_quarantine com diagnóstico.
+// ─────────────────────────────────────────────────────────────────────────────
+export const PAYMENT_UPDATED_CONTRACT_VERSION = 2;
 
-// Despacho único (o worker e os testes usam o mesmo caminho).
 export async function handleBalanceEvent(eventType, payload, eventId) {
     switch (eventType) {
         case 'BALANCE_DEBIT_REQUESTED':
             return handleDebit(payload, eventId);
         case 'BALANCE_CREDIT_REQUESTED':
             return handleCredit(payload, eventId);
-        default:
-            if (NOT_A_BALANCE_ENTRY.has(eventType)) {
-                console.log(`[BalanceWorker] ${eventType} não é lançamento no saldo do paciente — ignorado (${eventId})`);
-                return { status: 'skipped', reason: 'not_a_patient_balance_entry', eventId, eventType };
+        case 'PAYMENT_UPDATED':
+            if (payload?.balanceContract === PAYMENT_UPDATED_CONTRACT_VERSION) {
+                console.log(`[BalanceWorker] PAYMENT_UPDATED ${eventId}: saldo já ajustado na transação da edição (${(payload.changedFields || []).join(',') || 'sem campos'})`);
+                return { status: 'no_balance_effect', reason: 'ajustado_na_transacao_da_edicao', eventId, eventType };
             }
-            return handleLegacy(payload, eventId, eventType);
+            return quarantine(eventType, payload, eventId, 'payment_updated_sem_contrato');
+        default:
+            return quarantine(eventType, payload, eventId, 'tipo_fora_do_contrato');
     }
+}
+
+async function quarantine(eventType, payload, eventId, reason) {
+    await quarantineBalanceEvent({ source: 'balance-update', eventId, eventType, reason, payload });
+    console.warn(`[BalanceWorker] ${eventType} ${eventId} fora do contrato (${reason}): saldo não alterado, preservado em balance_event_quarantine`);
+    return { status: 'quarantined', reason, eventId, eventType };
 }
 
 // exportado só pra teste unitário direto do handler (sem subir BullMQ/Redis)
@@ -290,81 +315,4 @@ export async function handleCredit(payload, eventId) {
     }
 
     return { status: op.applied ? 'success' : 'already_processed', eventId, patientId, amount: value, operationKey };
-}
-
-// Caminho legado (BALANCE_UPDATE_REQUESTED e os PAYMENT_* roteados para esta
-// fila). Regras novas, todas sem escrita quando falham:
-//   1. Só lança com patientId, amount numérico diferente de zero e description
-//      (description é obrigatória no schema; updateOne sem validação gravava
-//      lançamento quebrado). Payload que não é lançamento vira "skipped", sem
-//      retentar: retentar não conserta payload.
-//   2. Idempotência persistente: o eventId fica no próprio lançamento
-//      (transactions.sourceEventId) e o filtro recusa aplicar de novo. Vale
-//      para reentrega do BullMQ, reinício do worker, dois workers ao mesmo
-//      tempo e retry depois de o $inc já ter sido aplicado. O Map em memória
-//      do worker é só atalho.
-export async function handleLegacy(payload, eventId, eventType = 'legacy') {
-    const { patientId, description, sessionId, appointmentId, registeredBy } = payload || {};
-    const amount = Number(payload?.amount);
-
-    if (!patientId) {
-        console.warn(`[BalanceWorker] ${eventType} sem patientId — não lança no saldo (${eventId})`);
-        return { status: 'skipped', reason: 'missing_patient_id', eventId, eventType };
-    }
-    if (!Number.isFinite(amount) || amount === 0) {
-        console.warn(`[BalanceWorker] ${eventType} sem amount válido — não lança no saldo (${eventId})`);
-        return { status: 'skipped', reason: 'invalid_amount', eventId, eventType, patientId };
-    }
-    if (typeof description !== 'string' || description.trim().length === 0) {
-        console.warn(`[BalanceWorker] ${eventType} sem description — não lança no saldo (${eventId})`);
-        return { status: 'skipped', reason: 'missing_description', eventId, eventType, patientId };
-    }
-    if (!eventId) {
-        throw new Error(`INVALID_EVENT: ${eventType} sem eventId — sem chave de idempotência`);
-    }
-
-    const filter = { patient: patientId, 'transactions.sourceEventId': { $ne: eventId } };
-    const update = {
-        $inc: {
-            currentBalance: amount,
-            totalDebited: amount > 0 ? amount : 0,
-            totalCredited: amount < 0 ? Math.abs(amount) : 0
-        },
-        $push: {
-            transactions: {
-                type: amount > 0 ? 'debit' : 'credit',
-                amount: Math.abs(amount),
-                description,
-                sessionId,
-                appointmentId,
-                registeredBy,
-                sourceEventId: eventId,
-                transactionDate: new Date()
-            }
-        },
-        $set: { lastTransactionAt: new Date() }
-    };
-
-    let res;
-    try {
-        res = await PatientBalance.updateOne(filter, update, { upsert: true, runValidators: true, context: 'query' });
-    } catch (err) {
-        // E11000 no índice único de patient: o documento já existe e já tem
-        // este evento (o upsert tentou criar outro), ou foi criado agora por
-        // outra entrega. Sem upsert: 0 casados = já aplicado.
-        if (err?.code !== 11000) throw err;
-        res = await PatientBalance.updateOne(filter, update, { runValidators: true, context: 'query' });
-    }
-    if (!res.upsertedCount && !res.modifiedCount) {
-        console.log(`[BalanceWorker] ${eventType} ${eventId} já lançado — reentrega ignorada`);
-        return { status: 'already_processed', eventId, eventType, patientId };
-    }
-
-    await getQueue('patient-projection').add('rebuild', {
-        eventType: 'BALANCE_UPDATED',
-        payload: { patientId },
-        correlationId: eventId
-    });
-
-    return { status: 'success', eventId, patientId, amount };
 }

@@ -1,6 +1,6 @@
 // Idempotência dos consumidores que uma recuperação de Outbox (republicar
 // entrada failed) pode atingir de novo: snapshot financeiro (SESSION_COMPLETED,
-// PAYMENT_STATUS_CHANGED) e saldo do paciente (balance-update).
+// PAYMENT_STATUS_CHANGED). O saldo do paciente tem suíte própria (balanceContract).
 // Cobre: repetição, concorrência e falha depois de o efeito já ter sido aplicado.
 //
 // Mongo e Redis DESCARTÁVEIS em loopback, dados fictícios, banco próprio por execução.
@@ -108,68 +108,5 @@ describe('snapshot financeiro: PAYMENT_STATUS_CHANGED', () => {
     assert.equal(d.cash.total, 220);
     assert.equal(d.payments.countPaid, 1);
     assert.equal(d.processedEvents.filter(e => e === 'evt-pay-1').length, 1);
-  });
-});
-
-describe('saldo do paciente (balance-update)', () => {
-  test('INSURANCE_PAYMENT_AUTO_SETTLED não cria saldo sem paciente (antes: patient:null somando)', { skip }, async () => {
-    const payload = { paymentId: oid().toString(), amount: 180, grossAmount: 190, issAmount: 10, reason: 'teste', settledAt: new Date() };
-    const r1 = await handleBalanceEvent('INSURANCE_PAYMENT_AUTO_SETTLED', payload, 'evt-ins-1');
-    const r2 = await handleBalanceEvent('INSURANCE_PAYMENT_AUTO_SETTLED', payload, 'evt-ins-1');
-    assert.equal(r1.status, 'skipped');
-    assert.equal(r2.status, 'skipped');
-    assert.equal(await PatientBalance.collection.countDocuments({}), 0);
-  });
-
-  test('payload sem patientId, sem amount ou sem description não grava nada', { skip }, async () => {
-    const patientId = oid().toString();
-    const semPaciente = await handleBalanceEvent('BALANCE_UPDATE_REQUESTED', { amount: 50, description: 'x' }, 'e1');
-    // Forma do PAYMENT_RECEIVED (amountReceived, sem amount) e do PAYMENT_UPDATED (sem description).
-    const semAmount = await handleBalanceEvent('PAYMENT_RECEIVED', { patientId, amountReceived: 220 }, 'e2');
-    const semDescricao = await handleBalanceEvent('PAYMENT_UPDATED', { patientId, amount: 220, status: 'paid' }, 'e3');
-    assert.deepEqual([semPaciente.reason, semAmount.reason, semDescricao.reason], ['missing_patient_id', 'invalid_amount', 'missing_description']);
-    assert.equal(await PatientBalance.collection.countDocuments({}), 0);
-  });
-
-  test('repetição: o mesmo evento legado 3 vezes lança uma vez', { skip }, async () => {
-    const patientId = oid().toString();
-    const ev = { patientId, amount: 180, description: 'sessão fictícia' };
-    const s = [];
-    for (let i = 0; i < 3; i++) s.push((await handleBalanceEvent('BALANCE_UPDATE_REQUESTED', ev, 'evt-bal-1')).status);
-    assert.deepEqual(s, ['success', 'already_processed', 'already_processed']);
-    const b = await PatientBalance.findOne({ patient: patientId }).lean();
-    assert.equal(b.currentBalance, 180);
-    assert.equal(b.transactions.length, 1);
-    assert.equal(b.transactions[0].sourceEventId, 'evt-bal-1');
-  });
-
-  test('concorrência: 10 entregas simultâneas, paciente ainda sem documento de saldo', { skip }, async () => {
-    const patientId = oid().toString();
-    const ev = { patientId, amount: 180, description: 'sessão fictícia' };
-    const rs = await Promise.all(Array.from({ length: 10 }, () => handleBalanceEvent('BALANCE_UPDATE_REQUESTED', ev, 'evt-bal-2')));
-    assert.equal(rs.filter(r => r.status === 'success').length, 1);
-    const b = await PatientBalance.findOne({ patient: patientId }).lean();
-    assert.equal(b.currentBalance, 180);
-    assert.equal(b.transactions.length, 1);
-  });
-
-  test('concorrência: eventos diferentes do mesmo paciente entram todos', { skip }, async () => {
-    const patientId = oid().toString();
-    await Promise.all(Array.from({ length: 6 }, (_, i) => handleBalanceEvent('BALANCE_UPDATE_REQUESTED', { patientId, amount: 50, description: `lançamento ${i}` }, `evt-dif-${i}`)));
-    const b = await PatientBalance.findOne({ patient: patientId }).lean();
-    assert.equal(b.currentBalance, 300);
-    assert.equal(b.transactions.length, 6);
-  });
-
-  test('falha depois do efeito: o $inc entrou, o job falhou e foi reentregue', { skip }, async () => {
-    const patientId = oid().toString();
-    const ev = { patientId, amount: -90, description: 'crédito fictício' };
-    await assert.rejects(async () => { await handleBalanceEvent('BALANCE_UPDATE_REQUESTED', ev, 'evt-bal-3'); throw new Error('queda depois do efeito'); });
-    const r = await handleBalanceEvent('BALANCE_UPDATE_REQUESTED', ev, 'evt-bal-3');
-    assert.equal(r.status, 'already_processed');
-    const b = await PatientBalance.findOne({ patient: patientId }).lean();
-    assert.equal(b.currentBalance, -90);
-    assert.equal(b.totalCredited, 90);
-    assert.equal(b.transactions.length, 1);
   });
 });

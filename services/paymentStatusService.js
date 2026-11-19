@@ -541,6 +541,72 @@ export async function reconcilePatientBalanceDebit(payment, { mongoSession, user
     return { reconciled: true, debitId: debit._id, settleAmount, fullyPaid: willBeFullyPaid };
 }
 
+/**
+ * 🏦 Ajuste de VALOR: quando o PATCH muda o `amount` de um Payment particular ainda não
+ * pago, o débito de "sessão fiada" vinculado acompanha a diferença. É o único efeito de saldo
+ * de uma mudança de valor; edição de dados não mexe em saldo e mudança de status é a baixa de
+ * reconcilePatientBalanceDebit.
+ *
+ * Mesmo vínculo da baixa (appointmentId, com sessionId desempatando). Só ajusta quando a
+ * correspondência é inequívoca: exatamente 1 débito em aberto, nada pago dele ainda e valor
+ * igual ao valor anterior do Payment. Qualquer outra situação NÃO ajusta e devolve o motivo
+ * (com `review: true` quando precisa de análise) para o chamador registrar em quarentena.
+ *
+ * Repetição e concorrência: compare-and-swap no próprio débito (`amount` = valor anterior,
+ * nada pago, não quitado). Repetir o mesmo PATCH encontra o valor já trocado e não faz nada;
+ * de duas edições simultâneas, só uma casa.
+ */
+export async function adjustOpenDebitForPaymentAmount(payment, newAmount, { mongoSession, userId } = {}) {
+    const from = roundCurrency(payment.amount);
+    const to = roundCurrency(newAmount);
+    if (!(to >= 0) || from === to) return { adjusted: false, why: 'sem_mudanca_de_valor' };
+    if (payment.billingType !== 'particular') return { adjusted: false, why: 'not_particular' };
+    if (payment.isFromPackage || payment.kind === 'package_consumed') return { adjusted: false, why: 'package_payment_handled_elsewhere' };
+    if (!payment.appointment) return { adjusted: false, why: 'no_appointment_link' };
+
+    const q = PatientBalance.findOne({ patient: payment.patient });
+    if (mongoSession) q.session(mongoSession);
+    const balance = await q.lean();
+    if (!balance) return { adjusted: false, why: 'no_balance_document' };
+
+    const byAppointment = (balance.transactions || []).filter(t =>
+        t.type === 'debit' && !t.isPaid && !t.isDeleted &&
+        t.appointmentId && String(t.appointmentId) === String(payment.appointment)
+    );
+    let candidates = byAppointment;
+    if (payment.session) {
+        const bySession = byAppointment.filter(t => t.sessionId && String(t.sessionId) === String(payment.session));
+        if (bySession.length > 0) candidates = bySession;
+    }
+    if (candidates.length === 0) return { adjusted: false, why: 'no_matching_debit' };
+    if (['paid', 'completed', 'confirmed'].includes(payment.status)) {
+        return { adjusted: false, why: 'pagamento_ja_quitado', review: true };
+    }
+    if (candidates.length > 1) return { adjusted: false, why: 'ambiguous_multiple_debits', review: true };
+    const debit = candidates[0];
+    if (Number(debit.paidAmount || 0) > 0) return { adjusted: false, why: 'debito_parcialmente_pago', review: true };
+    if (roundCurrency(debit.amount) !== from) return { adjusted: false, why: 'debito_com_valor_diferente_do_pagamento', review: true };
+
+    const delta = roundCurrency(to - from);
+    const opts = { runValidators: true, context: 'query' };
+    if (mongoSession) opts.session = mongoSession;
+    const res = await PatientBalance.updateOne(
+        {
+            _id: balance._id,
+            transactions: { $elemMatch: { _id: debit._id, amount: debit.amount, isPaid: { $ne: true }, paidAmount: { $in: [0, null] }, isDeleted: { $ne: true } } }
+        },
+        {
+            $set: { 'transactions.$.amount': to, lastTransactionAt: new Date() },
+            $push: { 'transactions.$.amountAdjustments': { from, to, paymentId: payment._id, by: userId || null, at: new Date() } },
+            $inc: { currentBalance: delta, totalDebited: delta }
+        },
+        opts
+    );
+    if (res.matchedCount === 0) return { adjusted: false, why: 'ja_ajustado_ou_concorrente' };
+    console.log(`[PaymentStatusService] 🏦 Débito ${debit._id} ajustado de R$${from} para R$${to} (Payment ${payment._id})`);
+    return { adjusted: true, debitId: debit._id, from, to, delta };
+}
+
 async function nextFreeOutboxEventId(baseKey, mongoSession) {
     // Sem conexão (testes unitários com outbox simulado) não há o que consultar:
     // a consulta ficaria presa no buffer do Mongoose.

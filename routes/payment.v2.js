@@ -32,7 +32,8 @@ import PatientBalance from '../models/PatientBalance.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 import { handlePaymentEvent } from '../projections/paymentsProjection.js';
-import { transitionPaymentStatus } from '../services/paymentStatusService.js';
+import { transitionPaymentStatus, adjustOpenDebitForPaymentAmount } from '../services/paymentStatusService.js';
+import { quarantineBalanceEvent } from '../models/BalanceEventQuarantine.js';
 import { syncAppointmentPaymentStatus } from '../services/financialGuard/syncAppointmentPaymentStatus.js';
 import { clearCashflowCache, clearCashflowCacheForDates } from './cashflow.v2.js';
 import { invalidateUFSCache, invalidateUFSCacheForDates } from '../services/unifiedFinancialService.v2.js';
@@ -1366,6 +1367,17 @@ router.patch('/:id', auth, requireStaff, async (req, res) => {
             }
         }
 
+        // 🏦 AJUSTE DE VALOR no saldo: na mesma transação da edição, antes da baixa, para a
+        // baixa (se o status também mudar) já quitar o valor novo. Edição só de dados não
+        // chega aqui. O evento PAYMENT_UPDATED publicado depois não move saldo.
+        let balanceAdjustment = null;
+        if (amount !== undefined && Number(amount) !== Number(payment.amount)) {
+            balanceAdjustment = await adjustOpenDebitForPaymentAmount(payment, amount, {
+                mongoSession, userId: req.user?._id
+            });
+            await Payment.updateOne({ _id: id }, { $set: { amount, updatedAt: new Date() } }, { session: mongoSession });
+        }
+
         // 🎯 STATUS TRANSITION: usa paymentStatusService se status mudou
         if (status !== undefined && status !== payment.status) {
             await transitionPaymentStatus(id, status, {
@@ -1523,16 +1535,52 @@ router.patch('/:id', auth, requireStaff, async (req, res) => {
             // Não falha a requisição — view é side-effect
         }
 
+        // 5b'. Ajuste de valor que não pôde ser aplicado com segurança: saldo intacto, caso
+        // preservado para análise (nunca some em silêncio).
+        if (balanceAdjustment?.review) {
+            try {
+                await quarantineBalanceEvent({
+                    source: 'payment-patch',
+                    eventId: `payment_patch:${id}:${updateData.updatedAt.getTime()}`,
+                    eventType: 'PAYMENT_AMOUNT_CHANGED',
+                    reason: balanceAdjustment.why,
+                    payload: { paymentId: id, patientId: payment.patient, appointmentId: payment.appointment },
+                    detail: { from: Number(payment.amount), to: Number(amount) }
+                });
+            } catch (qErr) {
+                logger.error(`[V2 PATCH ${id}] ⚠️ Falha ao registrar ajuste de saldo para análise: ${qErr.message}`);
+            }
+        }
+
         // 5c. Publicar evento PAYMENT_UPDATED (side-effect — try/catch isolado)
+        // Contrato v2 com o consumidor de saldo: o evento só informa; o saldo já foi ajustado
+        // acima, na transação. `status` é o NOVO (antes saía o antigo, porque updateData.status
+        // é apagado depois da transição) e `changedFields` diz o que mudou.
+        const newStatus = status !== undefined ? status : payment.status;
+        const changedFields = [
+            amount !== undefined && Number(amount) !== Number(payment.amount) && 'amount',
+            status !== undefined && status !== payment.status && 'status',
+            (paymentMethod !== undefined || splitMethods !== undefined) && 'paymentMethod',
+            serviceType !== undefined && 'serviceType',
+            specialty !== undefined && 'specialty',
+            paymentDate !== undefined && 'paymentDate',
+            financialDateBody !== undefined && 'financialDate',
+            notes !== undefined && 'notes',
+            doctor !== undefined && 'doctor'
+        ].filter(Boolean);
         try {
             await publishEvent(
                 EventTypes.PAYMENT_UPDATED,
                 {
+                    balanceContract: 2,
+                    changedFields,
+                    previousAmount: Number(payment.amount),
+                    balanceAdjustment: balanceAdjustment ? { adjusted: !!balanceAdjustment.adjusted, why: balanceAdjustment.why || null, delta: balanceAdjustment.delta ?? 0 } : null,
                     paymentId: id,
                     patientId: payment.patient?.toString?.(),
                     doctorId: payment.doctor?.toString?.(),
                     amount: updateData.amount ?? payment.amount,
-                    status: updateData.status ?? payment.status,
+                    status: newStatus,
                     paymentMethod: updateData.paymentMethod ?? payment.paymentMethod,
                     serviceType: updateData.serviceType ?? payment.serviceType,
                     specialty: updateData.specialty ?? payment.specialty,
@@ -1543,7 +1591,13 @@ router.patch('/:id', auth, requireStaff, async (req, res) => {
                     previousStatus: payment.status,
                     updatedAt: new Date().toISOString()
                 },
-                { correlationId: `v2_payment_patch_${id}_${Date.now()}` }
+                {
+                    correlationId: `v2_payment_patch_${id}_${Date.now()}`,
+                    // Uma edição = um evento: sem chave por agregado (que juntava edições
+                    // diferentes) e sem debounce (que descartava a segunda edição em 5 s).
+                    idempotencyKey: `payment_updated:${id}:${updateData.updatedAt.getTime()}`,
+                    debounce: false
+                }
             );
         } catch (pubErr) {
             logger.error(`[V2 PATCH ${id}] ⚠️ Falha ao publicar evento: ${pubErr.message}`);

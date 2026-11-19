@@ -101,9 +101,19 @@ const balanceTransactionSchema = new mongoose.Schema({
         type: String,
         default: null
     },
-    // eventId do Outbox que gerou o lançamento (caminho legado do balanceWorker):
-    // chave de idempotência persistente, recusa o mesmo evento duas vezes.
-    sourceEventId: { type: String, default: null },
+    // Trilha de ajustes de valor do débito feitos pela edição do Payment vinculado
+    // (adjustOpenDebitForPaymentAmount). O valor atual fica em `amount`.
+    amountAdjustments: {
+        type: [{
+            _id: false,
+            from: { type: Number, required: true },
+            to: { type: Number, required: true },
+            paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
+            by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+            at: { type: Date, default: Date.now }
+        }],
+        default: undefined
+    },
     // 🆕 V4: ID de correlação para idempotência (1 appointment = 1 débito)
     correlationId: {
         type: String,
