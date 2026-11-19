@@ -6,6 +6,8 @@ import {
   BOOKED_STATUSES, isEligibleStatus, resolveMainPhone,
   decidePlatforms, interpretMetaResponse, interpretTiktokResponse, buildFbc,
   resolveConversionTime, shouldAcquire, eventIdFor, buildPendingClaim,
+  isSystemProjection, isRealPreAgendamento, isConversionCandidate, conversionStatusFilter,
+  isPreAgendamentoEnabled,
 } from '../crons/adsConversion.logic.js';
 
 let pass = 0, fail = 0;
@@ -189,6 +191,61 @@ t('confirmação tardia: event_time recente entra na janela de 7d (é enviável)
   const et = resolveConversionTime(appt);
   const d = decidePlatforms({ first: true, phone: '5562992013573', attr: {}, eventTimeMs: et.getTime(), now });
   assert.equal(d.meta.status, 'pending'); // dentro da janela por causa do event_time comprovado
+});
+
+
+console.log('\n#2c Pré-agendamento REAL conta como agendamento novo (19/11)');
+const OID = 'a'.repeat(24);
+t('pré-agendamento do site/agenda externa/recepção é candidato', () => {
+  assert.equal(isConversionCandidate({ operationalStatus: 'pre_agendado', metadata: { origin: { source: 'link_agendamento' } } }), true);
+  assert.equal(isConversionCandidate({ operationalStatus: 'pre_agendado' }), true);
+  assert.equal(isRealPreAgendamento({ operationalStatus: 'pre_agendado', billingType: 'particular' }), true);
+});
+t('projeção do sistema (convênio por plano, liminar, plano terapêutico, pacote) NÃO é candidata', () => {
+  for (const extra of [
+    { insurancePlan: OID }, { metadata: { origin: { source: 'insurance_plan' } } },
+    { liminarContract: OID }, { therapeuticPlan: OID }, { package: OID },
+    { billingType: 'liminar' }, { serviceType: 'liminar_session' }, { serviceType: 'package_session' },
+  ]) {
+    const appt = { operationalStatus: 'pre_agendado', ...extra };
+    assert.equal(isSystemProjection(appt), true, JSON.stringify(extra));
+    assert.equal(isConversionCandidate(appt), false, JSON.stringify(extra));
+  }
+});
+t('flag desligada -> pré-agendamento volta a ficar fora; booked segue dentro', () => {
+  assert.equal(isConversionCandidate({ operationalStatus: 'pre_agendado' }, { includePreAgendamento: false }), false);
+  assert.equal(isConversionCandidate({ operationalStatus: 'scheduled' }, { includePreAgendamento: false }), true);
+});
+t('cancelado/expirado nunca é candidato', () => {
+  for (const s of ['canceled', 'expired', 'missed']) assert.equal(isConversionCandidate({ operationalStatus: s }), false);
+});
+t('ADS_CONVERSION_PRE_AGENDADO: ligado por padrão, "false" desliga', () => {
+  assert.equal(isPreAgendamentoEnabled({}), true);
+  assert.equal(isPreAgendamentoEnabled({ ADS_CONVERSION_PRE_AGENDADO: 'false' }), false);
+});
+t('filtro Mongo: booked OU pre_agendado sem marcas de projeção', () => {
+  const f = conversionStatusFilter();
+  assert.deepEqual(f.$or[0], { operationalStatus: { $in: BOOKED_STATUSES } });
+  const pre = f.$or[1];
+  assert.equal(pre.operationalStatus, 'pre_agendado');
+  for (const k of ['insurancePlan', 'liminarContract', 'therapeuticPlan', 'package']) assert.equal(pre[k], null);
+  assert.deepEqual(pre['metadata.origin.source'], { $ne: 'insurance_plan' });
+  assert.deepEqual(conversionStatusFilter({ includePreAgendamento: false }), { operationalStatus: { $in: BOOKED_STATUSES } });
+});
+t('event_time do pré-agendamento real = criação (não a confirmação dias depois)', () => {
+  const cd = new Date('2026-11-10T13:00:00Z');
+  const appt = { createdAt: cd, operationalStatus: 'scheduled', history: [ { timestamp: new Date('2026-11-14T10:00:00Z'), details: { from: 'pre_agendado', to: 'scheduled' } } ] };
+  assert.equal(resolveConversionTime(appt, { includePreAgendamento: true }).getTime(), cd.getTime());
+});
+t('projeção confirmada mantém a regra antiga (transição comprovada)', () => {
+  const tConf = new Date('2026-11-14T10:00:00Z');
+  const appt = { createdAt: new Date('2026-11-01T00:00:00Z'), insurancePlan: OID, history: [ { timestamp: tConf, details: { to: 'scheduled' } } ] };
+  assert.equal(resolveConversionTime(appt, { includePreAgendamento: true }).getTime(), tConf.getTime());
+});
+t('aquisição: pré-agendamento real anterior é a âncora (este defere)', () => {
+  const earlier = [{ operationalStatus: 'pre_agendado' }];
+  const earlierEligibleExists = earlier.some(e => isConversionCandidate(e));
+  assert.equal(shouldAcquire({ hasPatient: true, alreadyAcquired: false, earlierConverted: false, earlierEligibleExists }), false);
 });
 
 console.log('\n#3b event_id estável e reserva atômica (buildPendingClaim)');

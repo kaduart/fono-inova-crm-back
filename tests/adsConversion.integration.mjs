@@ -75,6 +75,27 @@ await t('#3 reserva ATÔMICA: 2 processPending concorrentes -> 1 envio, event_id
   assert.equal(row.meta.status, 'sent');
 });
 
+await t('#4 (19/11) pré-agendamento REAL vira aquisição; projeção de convênio fica fora; confirmar não duplica', async () => {
+  await AdConversion.collection.deleteMany({}); await Appointment.collection.deleteMany({});
+  const P = oid(), Q = oid();
+  await Patient.create({ _id: P, phone: '62992013574', fullName: 'Teste Pre' });
+  await Patient.create({ _id: Q, phone: '62992013575', fullName: 'Teste Conv' });
+  const created = new Date(now - 2 * 3600e3);
+  const PRE = await Appointment.create({ _id: oid(), patient: P, operationalStatus: 'pre_agendado', date: new Date(now + 3*DAY), createdAt: created, metadata: { origin: { source: 'link_agendamento' } } });
+  await Appointment.create({ _id: oid(), patient: Q, operationalStatus: 'pre_agendado', date: new Date(now + 3*DAY), createdAt: created, insurancePlan: oid(), metadata: { origin: { source: 'insurance_plan' } } });
+  globalThis.__ATTR__ = { '5562992013574': { source: 'meta', method: 'token' } };
+  await enqueueNew();
+  const rows = await AdConversion.find({}).lean();
+  assert.equal(rows.length, 1, 'só o pré-agendamento real entra');
+  assert.equal(String(rows[0].appointment), String(PRE._id));
+  assert.equal(rows[0].isAcquisition, true);
+  assert.equal(new Date(rows[0].eventTime).getTime(), created.getTime(), 'event_time = criação do pré-agendamento');
+  // confirmação: mesmo documento vira scheduled -> não cria 2ª conversão
+  await Appointment.updateOne({ _id: PRE._id }, { $set: { operationalStatus: 'scheduled' }, $push: { history: { timestamp: new Date(), details: { from: 'pre_agendado', to: 'scheduled' } } } });
+  await enqueueNew();
+  assert.equal(await AdConversion.countDocuments({ appointment: PRE._id }), 1, 'confirmação não duplica');
+});
+
 console.log(`\n==== ${pass} passaram, ${fail} falharam ====`);
 await mongoose.disconnect();
 process.exit(fail ? 1 : 0);

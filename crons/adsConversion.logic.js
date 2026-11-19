@@ -18,6 +18,55 @@ export function isEligibleStatus(status) {
   return BOOKED_STATUSES.includes(status);
 }
 
+// 19/11 (Kadu): PRÉ-AGENDAMENTO REAL também é agendamento novo para Meta/Google/TikTok.
+// "Real" = pedido de uma pessoa (link de agendamento do site, agenda externa, triagem, recepção).
+// Continua FORA a projeção gerada por sistema, que também nasce pre_agendado:
+// sessões de plano de convênio (insurancePlan / origin insurance_plan), liminar, plano
+// terapêutico e sessões de pacote. Desligar sem deploy: ADS_CONVERSION_PRE_AGENDADO=false.
+export const PRE_AGENDADO = 'pre_agendado';
+
+export function isPreAgendamentoEnabled(env = process.env) {
+  return env.ADS_CONVERSION_PRE_AGENDADO !== 'false';
+}
+
+export function isSystemProjection(appt = {}) {
+  return !!(
+    appt.insurancePlan || appt.liminarContract || appt.therapeuticPlan || appt.package
+    || appt.metadata?.origin?.source === 'insurance_plan'
+    || appt.billingType === 'liminar'
+    || appt.serviceType === 'liminar_session' || appt.serviceType === 'package_session'
+  );
+}
+
+export function isRealPreAgendamento(appt = {}) {
+  return appt.operationalStatus === PRE_AGENDADO && !isSystemProjection(appt);
+}
+
+// Elegível para virar conversão: agendamento real (booked) OU pré-agendamento real (se ligado).
+export function isConversionCandidate(appt = {}, { includePreAgendamento = true } = {}) {
+  if (BOOKED_STATUSES.includes(appt.operationalStatus)) return true;
+  return includePreAgendamento && isRealPreAgendamento(appt);
+}
+
+// Filtro Mongo equivalente a isConversionCandidate (para a varredura do cron).
+// `campo: null` casa campo ausente ou nulo.
+export function conversionStatusFilter({ includePreAgendamento = true } = {}) {
+  const booked = { operationalStatus: { $in: BOOKED_STATUSES } };
+  if (!includePreAgendamento) return booked;
+  return {
+    $or: [
+      booked,
+      {
+        operationalStatus: PRE_AGENDADO,
+        insurancePlan: null, liminarContract: null, therapeuticPlan: null, package: null,
+        'metadata.origin.source': { $ne: 'insurance_plan' },
+        billingType: { $ne: 'liminar' },
+        serviceType: { $nin: ['liminar_session', 'package_session'] },
+      },
+    ],
+  };
+}
+
 // fbc no formato exigido pela Meta: fb.1.<ms do clique>.<fbclid>
 export function buildFbc(attr) {
   if (!attr?.fbclid) return null;
@@ -141,7 +190,14 @@ export function shouldReopenMetaForClid(conv = {}, now = Date.now()) {
 // Usa o timestamp da PRIMEIRA transição comprovada; se não houver evidência no histórico
 // (ex.: agendamento criado já em status booked), cai para createdAt (a criação é a
 // evidência). NUNCA usa updatedAt genérico nem inventa data para histórico sem evidência.
-export function resolveConversionTime(appt) {
+//
+// 19/11: com pré-agendamento ligado, o agendamento que NÃO é projeção do sistema converte
+// quando é CRIADO (seja pre_agendado, seja já scheduled) → event_time = createdAt, mesmo que
+// a confirmação venha dias depois. Projeção (convênio/liminar/pacote) segue a regra antiga.
+export function resolveConversionTime(appt, { includePreAgendamento = false } = {}) {
+  if (includePreAgendamento && appt?.createdAt && !isSystemProjection(appt)) {
+    return new Date(appt.createdAt);
+  }
   const hist = Array.isArray(appt?.history) ? appt.history : [];
   let earliest = null;
   for (const h of hist) {
