@@ -88,12 +88,26 @@ export async function liveReaperLeaseHolder(db) {
  * banco/coleção, nunca grava a marca ali, então a KAS fica parada em vez de
  * virar um segundo dono. O documento já existe porque acquire() roda antes.
  */
-export async function markCrmNodeParticipant(db, holder = defaultReaperHolder()) {
-    await collectionOf(db).updateOne(
+export async function markCrmNodeParticipant(db, holder = defaultReaperHolder(), mode = 'on') {
+    if (!CRM_NODE_MARKER_MODES.includes(mode)) throw new Error(`modo da marca inválido: ${mode}`);
+    const coll = collectionOf(db);
+    if (mode === 'yield') {
+        // No modo cedente o Node não chama acquire(); o documento nasce vencido aqui.
+        await coll.insertOne({ _id: REAPER_LEASE_ID, expiresAt: new Date(0) }).catch((e) => { if (e?.code !== 11000) throw e; });
+    }
+    await coll.updateOne(
         { _id: REAPER_LEASE_ID },
-        [{ $set: { 'participants.crmNode': { at: '$$NOW', holder, mode: 'on' } } }]
+        [{ $set: { 'participants.crmNode': { at: '$$NOW', holder, mode } } }]
     );
 }
+
+/**
+ * Modos da marca: 'on' = o Node disputa a posse (EVENT_REAPER_OWNER=node);
+ * 'yield' = o Node cede a execução à KAS (EVENT_REAPER_OWNER=kas), nunca toma a
+ * posse e nunca recupera eventos, mas continua provando que está configurado
+ * na mesma posse. É o que permite a troca Node → Go com a guarda da KAS ligada.
+ */
+export const CRM_NODE_MARKER_MODES = ['on', 'yield'];
 
 /**
  * Leitura (sem escrita) para conferir a configuração antes da troca.

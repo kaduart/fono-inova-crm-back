@@ -30,7 +30,7 @@ import { MAX_RECOVERIES, legacyFenceFromEnv, legacyAbandonedFilter } from '../in
 import mongoose from 'mongoose';
 import {
     createReaperLease, liveReaperLeaseHolder, sharedLeaseModeFromEnv, reaperLeaseTtlFromEnv,
-    ReaperLeaseLostError, markCrmNodeParticipant
+    ReaperLeaseLostError, markCrmNodeParticipant, defaultReaperHolder
 } from '../infrastructure/events/reaperLease.js';
 export { MAX_RECOVERIES };
 
@@ -306,7 +306,27 @@ export function initEventReaperCron() {
     };
 }
 
-export default { initEventReaperCron };
+/**
+ * EVENT_REAPER_OWNER=kas com EVENT_REAPER_SHARED_LEASE=on: o Node CEDE a execução.
+ * Não toma a posse e não recupera nada; só renova a marca participants.crmNode
+ * (mode 'yield') a cada intervalo. Sem essa marca a KAS com a guarda
+ * (-require-crm-node-lease, padrão) não age. Se este processo parar ou voltar a
+ * off, a marca envelhece e a KAS para em até -crm-node-marker-max-age.
+ */
+export function initEventReaperParticipantCron() {
+    const holder = defaultReaperHolder();
+    const intervalMs = msFromEnv('EVENT_REAPER_INTERVAL_MS', 5 * 60 * 1000, 500);
+    const mark = () => markCrmNodeParticipant(undefined, holder, 'yield')
+        .then(() => log.info('reaper_yield_mark', 'Node cede o reaper à KAS; marca renovada', { holder }))
+        .catch((e) => log.warn('reaper_participant_mark_failed', e.message));
+    console.log(`[EventReaper] modo cedente: EVENT_REAPER_OWNER=kas, posse compartilhada on; o Node não recupera eventos, só renova a marca (${holder})`);
+    const id = setInterval(mark, intervalMs);
+    mark();
+    const stop = () => clearInterval(id);
+    return { stop, stopAndRelease: async () => stop() };
+}
+
+export default { initEventReaperCron, initEventReaperParticipantCron };
 
 /** Um ciclo completo do cron (decisão on/off + recuperação), para os testes da posse. */
 export { runOnce as runReaperCycle };

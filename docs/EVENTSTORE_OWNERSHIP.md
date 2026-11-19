@@ -268,29 +268,37 @@ Agora o Node usa o **mesmo documento** da KAS (`infrastructure/events/reaperLeas
 
 ### 11.1 Matriz de configuração Node × KAS
 
-A KAS ganhou a guarda `-require-crm-node-lease` (kas-core #14). Com ela, o executor só age enquanto o Node renova a marca `participants.crmNode.at` (`$$NOW`) no mesmo documento da posse. O Node só grava essa marca com `EVENT_REAPER_SHARED_LEASE=on`, a cada ciclo, mesmo quando não fica com a posse. Se a marca faltar ou estiver mais velha que `-crm-node-marker-max-age` (padrão 15 min), a KAS pula o ciclo (`incompatible_config`), devolve a posse que tiver e não grava nada.
+A KAS tem a guarda `-require-crm-node-lease`, **ligada por padrão** (kas-core #14). Com ela, o executor só age enquanto o Node renova a marca `participants.crmNode.at` (`$$NOW`) no mesmo documento da posse. A guarda confere a marca no início de cada ciclo e também **em cada escrita**, dentro da mesma transação da cerca. Se a marca faltar ou passar de `-crm-node-marker-max-age` (padrão 15 min), a próxima escrita não confirma. O ciclo seguinte é pulado com `incompatible_config`, a KAS devolve a posse e não grava nada.
 
-| Node (`EVENT_REAPER_SHARED_LEASE`) | KAS | Resultado | Prova |
+O Node grava a marca só com `EVENT_REAPER_SHARED_LEASE=on`, em dois modos:
+
+- `EVENT_REAPER_OWNER=node` (marca `mode: on`): disputa a posse e recupera quando a tem.
+- `EVENT_REAPER_OWNER=kas` (marca `mode: yield`, **modo cedente**): nunca toma a posse e nunca recupera, só renova a marca a cada intervalo. É o estado em que a KAS executa.
+
+| Node | KAS | Resultado | Prova |
 |---|---|---|---|
-| ausente | parada | Igual a hoje: Node recupera sem posse, não cria documento nem marca | Node: `matriz: variável AUSENTE` |
-| `off` | parada | Igual a ausente | Node: `modo off` e `ausente` |
-| ausente/`off` | executor **sem** guarda | **INCOMPATÍVEL, dois responsáveis.** O Node off confere a posse só no início do ciclo. Se a KAS assumir depois, os dois recuperam no mesmo intervalo. A escrita condicional evita gravar o mesmo evento duas vezes, mas há dois donos | Node: `matriz: OFF + KAS SEM a guarda`; binário Go real sem guarda agiu com o Node fora da posse |
-| ausente/`off` | executor **com** guarda | Seguro: a KAS recusa (`incompatible_config`) e não toma a posse | Go: `TestRequireCRMNodeRefusesWhenNodeIsNotLeaseAware`; binário real: `skipped=incompatible_config` |
-| `on` | executor com guarda | Seguro: um dono por vez pela posse, e toda escrita é cercada. O Node com posse faz a KAS ficar em `not_leader`; com parada limpa, a KAS assume | Node: `matriz: ON`, `ON com a KAS dona`; Go: `ActsWithFreshMarker`; binário real: `not_leader` e depois `applied` |
-| `on` → `off` (reversão) | executor com guarda | A marca para de ser renovada. A KAS para em até `max-age` e devolve a posse. Enquanto a posse da KAS estiver viva, o Node off pula o ciclo | Node: `matriz: reversão ON → OFF`; Go: `StaleMarkerStopsAndReleases` |
-| `on` | executor com `-lease-collection` ou `-db` diferente | Sem guarda, **dois donos** (cada um com a sua posse). Com guarda, a KAS não acha a marca e recusa | Go: `TestRequireCRMNodeDivergentLeaseCollectionRefuses`; conferência: `--kas-lease-collection` |
-| inválido (`sim`, `true`...) | qualquer | A subida do cron falha com erro explícito; não roda calado | Node: `matriz: valor INVÁLIDO` |
+| ausente ou `off` | parada | Igual a hoje: o Node recupera sem posse, sem documento e sem marca | Node: `matriz: variável AUSENTE`, `OFF` |
+| ausente ou `off` | executor (guarda padrão) | Seguro: a KAS recusa (`incompatible_config`), não toma a posse e o Node segue recuperando | Go: `RefusesWhenNodeIsNotLeaseAware`; integrado: G1 e G2 |
+| ausente ou `off` | executor com `-require-crm-node-lease=false` | **Dois responsáveis.** Por isso esse modo só é aceito em banco de loopback (teste) e nunca junto com `-allow-remote-executor` | Node: `OFF + KAS SEM a guarda`; Go: `UnguardedExecutorOnlyOnLoopback` |
+| `on`, `OWNER=node` | executor | Um dono por vez pela posse, com toda escrita cercada | Node: `matriz: ON`; integrado: 7.1 a 7.4 |
+| `on`, `OWNER=kas` (cedente) | executor | Só a KAS recupera; o Node prova a configuração | Node: `troca: OWNER=kas + ON`; integrado: item 9, fase 2 |
+| `OWNER=kas` sem `on` | executor | Ninguém recupera: o Node não sobe nada e a KAS recusa. O Node avisa no log (`SEM EVENT_REAPER_SHARED_LEASE=on`) | Node: `troca: OWNER=kas SEM on` |
+| `on` → `off`, ou Node parado, com a KAS executando | executor | A marca envelhece. A KAS para de escrever em até `max-age` (inclusive no meio de um ciclo) e devolve a posse. Enquanto a posse da KAS estiver viva, o Node `off` pula o ciclo; depois, retoma | Go: `FenceRefusesMidCycle...`, `StaleMarkerStopsAndReleases`; integrado: G4 e G5 |
+| `on` | executor com `-lease-collection` ou `-db` diferente | A KAS não acha a marca e recusa; o Node segue | Go: `DivergentLeaseCollectionRefuses`; integrado: G3 |
+| inválido (`sim`, `true`...) | qualquer | A subida do cron falha com erro explícito | Node: `matriz: valor INVÁLIDO` |
 
-TTL diferente entre Node (`EVENT_REAPER_LEASE_TTL_MS`) e KAS (`-lease-ttl`) não cria dois donos: a posse e a cerca usam o token. TTL menor que o intervalo só faz a posse trocar de mãos entre ciclos (a KAS avisa no log).
+TTL diferente entre Node (`EVENT_REAPER_LEASE_TTL_MS`) e KAS (`-lease-ttl`) não cria dois donos: a posse e a cerca usam o token.
 
-### 11.2 Procedimento de ativação (ninguém executa sem OK do Kadu)
+### 11.2 Procedimento de troca (ninguém executa sem OK do Kadu)
+
+A guarda é obrigatória em todo o procedimento. O modo sem guarda (`-require-crm-node-lease=false`) existe só para os roteiros de teste da KAS que rodam sem CRM, em banco descartável de loopback (`scripts/validate-event-reaper.sh`). O binário recusa esse modo em qualquer host remoto e com `-allow-remote-executor`, então ele não serve para a troca nem por engano. Se esse texto aparecer em algum comando de troca, pare.
 
 1. **Node em `on` em todos os processos que sobem o reaper** (API e cron-worker, `EVENT_REAPER_OWNER=node`). Conferir no log de cada um a linha `[EventReaper] posse compartilhada: on`. Qualquer `off` ou `(ausente)` significa parar aqui.
 2. **Esperar pelo menos um ciclo** (5 min + 2 min de aquecimento) para a marca existir.
-3. **Conferência só leitura:** `PREFLIGHT_MONGO_URI=<usuário read> node scripts/reaper/preflight-posse.mjs --db <banco do CRM>`, com `--kas-lease-collection` igual ao que a KAS vai usar. Saída 0 = `COMPATÍVEL`; 1 = `INCOMPATÍVEL`, com o motivo (sem documento, sem marca, marca velha, coleção divergente, posse viva fora do Node sem marca).
-4. **Subir a KAS sempre com `-mode executor -require-crm-node-lease`**, mesmo `-db` e coleção de posse padrão. Sem a guarda, ela avisa no log (`executor does not check the CRM Node reaper`), e isso também é motivo para parar.
-5. **Durante a convivência:** a KAS só age quando tem a posse. Se alguém desligar o `on` no Node, a KAS para sozinha em até 15 min (`incompatible_config` no relatório).
-6. **Reversão:** parar a KAS (SIGTERM devolve a posse) **antes** de mexer no Node. Se o Node for revertido para `off` primeiro, a guarda limita a convivência ao prazo da marca.
-7. **`EVENT_REAPER_OWNER=kas` (Node sem reaper nenhum)** é um passo separado e opcional. Nesse estado o Node não grava a marca, então a KAS com a guarda fica parada. Só vale tirar a guarda depois que **todos** os processos do Node mostrarem no log `eventReaper não iniciado: EVENT_REAPER_OWNER=kas`. O estado recomendado é Node em `on` como reserva: ele só age quando a posse da KAS vence.
+3. **Conferência só leitura:** `PREFLIGHT_MONGO_URI=<usuário read> node scripts/reaper/preflight-posse.mjs --db <banco do CRM>`, com `--kas-lease-collection` igual ao que a KAS vai usar. Saída 0 = `COMPATÍVEL`; 1 = `INCOMPATÍVEL`, com o motivo.
+4. **Subir a KAS com `-mode executor`**, mesmo `-db` e coleção de posse padrão, sem `-require-crm-node-lease=false`. O log de partida precisa mostrar `executor requires the CRM Node reaper on the shared lease`. Nessa fase, Node e KAS se revezam pela posse (convivência).
+5. **Passar a execução para a KAS:** `EVENT_REAPER_OWNER=kas` **mantendo** `EVENT_REAPER_SHARED_LEASE=on` e reiniciando cada processo do Node. O log precisa mostrar `[EventReaper] modo cedente`, e a conferência do passo 3 deve mostrar `modo yield`. O aviso `SEM EVENT_REAPER_SHARED_LEASE=on` significa parar e voltar `on`.
+6. **Reversão:** `EVENT_REAPER_OWNER=node` (com `on`) e reiniciar o Node. Ele volta a disputar e assume quando a posse da KAS vencer ou quando a KAS for parada (SIGTERM devolve a posse na hora). Se alguém tirar o `on` por engano, a KAS para de escrever sozinha em até 15 min e o Node `off` retoma depois disso.
+7. **Detectar incompatibilidade a qualquer momento:** relatório da KAS com `skipped: incompatible_config`, a conferência do passo 3 com `INCOMPATÍVEL`, ou o log do Node sem `posse compartilhada: on` / `modo cedente`.
 
-Prova: `tests/eventstore/reaperLease.mongo.nodetest.mjs` (`npm run test:reaper-posse-compartilhada`, 14 casos, 7 deles da matriz acima), kas-core `internal/legacy/crmeventstore/lease_crmnode_test.go` (5 casos) e o ambiente integrado CRM + KAS (`kas-core/deploy/integrado/run.sh`), que roda Node e Go juntos, faz a reversão Node → Go → Node e confere pelo change stream do banco que toda recuperação foi gravada dentro da posse.
+Prova: `tests/eventstore/reaperLease.mongo.nodetest.mjs` (`npm run test:reaper-posse-compartilhada`, 16 casos, 9 deles da matriz acima), kas-core `internal/legacy/crmeventstore/lease_crmnode_test.go` (7 casos) e `cmd/kas-event-reaper/main_test.go` (guarda padrão e recusa do modo sem guarda fora de loopback), além do ambiente integrado CRM + KAS (`kas-core/deploy/integrado/run.sh`), que roda Node e Go juntos, faz a reversão Node → Go → Node e confere pelo change stream do banco que toda recuperação foi gravada dentro da posse.

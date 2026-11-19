@@ -218,3 +218,36 @@ test('matriz: valor INVÁLIDO derruba a subida do cron (não roda calado)', () =
     if (saved === undefined) delete process.env.EVENT_REAPER_SHARED_LEASE; else process.env.EVENT_REAPER_SHARED_LEASE = saved;
   }
 });
+
+// Troca Node → Go com a guarda: EVENT_REAPER_OWNER=kas + on deixa o Node CEDENTE.
+test('troca: OWNER=kas + ON = modo cedente. Renova a marca (yield), nunca toma a posse, nunca recupera', { skip }, async () => {
+  const ids = await seedStuck(3);
+  const { startReaperYieldIfShared, stopAllCronsAndRelease } = await import('../../config/cronManager.js');
+  const cron = await withEnv({ EVENT_REAPER_SHARED_LEASE: 'on', EVENT_REAPER_INTERVAL_MS: '500' }, () => startReaperYieldIfShared());
+  try {
+    assert.ok(cron, 'modo cedente sobe com on');
+    await sleep(1300);
+    const doc = await leaseDoc();
+    assert.equal(doc.participants.crmNode.mode, 'yield');
+    assert.ok(Date.now() - doc.participants.crmNode.at.getTime() < 2000, 'marca renovada a cada intervalo');
+    assert.ok(!doc.token && doc.expiresAt.getTime() === 0, 'o Node cedente nunca toma a posse');
+    const kas = createReaperLease({ holder: 'kas:troca', ttlMs: 10_000 });
+    assert.equal(await kas.acquire(), true, 'a KAS (com a guarda) fica livre para assumir');
+    const after = await EventStore.find({ eventId: { $in: ids } }).lean();
+    assert.ok(after.every((e) => e.status === 'processing'), 'o Node cedente não recupera nada');
+  } finally {
+    await stopAllCronsAndRelease();
+  }
+});
+
+test('troca: OWNER=kas SEM on não sobe nada e avisa (a KAS com a guarda também fica parada)', { skip }, async () => {
+  const { startReaperYieldIfShared } = await import('../../config/cronManager.js');
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(String(m));
+  try {
+    const cron = await withEnv({ EVENT_REAPER_SHARED_LEASE: 'off' }, () => startReaperYieldIfShared());
+    assert.equal(cron, null);
+  } finally { console.warn = orig; }
+  assert.ok(warns.some((w) => /SEM EVENT_REAPER_SHARED_LEASE=on/.test(w)));
+  assert.equal(await leaseDoc(), null, 'sem marca, sem documento');
+});

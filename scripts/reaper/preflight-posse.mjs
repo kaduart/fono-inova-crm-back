@@ -39,7 +39,8 @@ try {
       msLeft: { $subtract: ['$expiresAt', '$$NOW'] },
       nodeAt: '$participants.crmNode.at',
       nodeAgeMs: { $subtract: ['$$NOW', '$participants.crmNode.at'] },
-      nodeHolder: '$participants.crmNode.holder'
+      nodeHolder: '$participants.crmNode.holder',
+      nodeMode: '$participants.crmNode.mode'
     } }
   ]).toArray();
 
@@ -51,7 +52,7 @@ try {
       problems.push('sem marca participants.crmNode: o reaper do Node não está em "on" (ou aponta para outro banco).');
     } else {
       const ageS = Math.round(doc.nodeAgeMs / 1000);
-      info.push(`marca do Node: ${doc.nodeHolder ?? '?'} há ${ageS} s`);
+      info.push(`marca do Node: ${doc.nodeHolder ?? '?'} há ${ageS} s, modo ${doc.nodeMode ?? '?'} (${doc.nodeMode === 'yield' ? 'Node cede à KAS: EVENT_REAPER_OWNER=kas' : 'Node disputa a posse: EVENT_REAPER_OWNER=node'})`);
       if (doc.nodeAgeMs > MAX_AGE_MS) problems.push(`marca do Node com ${ageS} s (máximo ${MAX_AGE_MS / 1000} s): o Node parou de renovar (flag desligada, processo parado ou revertido).`);
     }
     if (doc.live && doc.holder && !String(doc.holder).startsWith('crm-node:') && (!doc.nodeAt || doc.nodeAgeMs > MAX_AGE_MS)) {
@@ -69,6 +70,6 @@ for (const l of info) console.log(`info  ${l}`);
 for (const p of problems) console.log(`ERRO  ${p}`);
 console.log('\nConfira também nos logs de CADA processo que sobe o reaper do Node (API e cron-worker):');
 console.log('  "[EventReaper] posse compartilhada: on"  (qualquer "off" ou "(ausente)" = incompatível)');
-console.log('E suba a KAS com: -mode executor -require-crm-node-lease (sem -lease-collection diferente).');
+console.log('E suba a KAS com: -mode executor (a guarda -require-crm-node-lease já vem ligada; nunca passe =false fora de banco de teste local) e sem -lease-collection diferente.');
 console.log(problems.length ? '\nINCOMPATÍVEL: não ligue a KAS.' : '\nCOMPATÍVEL: pode seguir para o próximo passo do procedimento.');
 process.exit(problems.length ? 1 : 0);
