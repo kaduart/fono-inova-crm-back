@@ -33,8 +33,10 @@ const INVENTORY = {
   // Texto, template e mídia manuais usam Idempotency-Key + guarda quando o front manda a
   // chave (sem chave = cliente antigo, envia como antes).
   'controllers/whatsappController.js': { kind: 'human-guarded', via: 'sendManualOnce', reason: 'texto, template e mídia manuais com Idempotency-Key' },
-  'middleware/whatsappGuard.js': { kind: 'internal', reason: 'alerta ao admin; repetição tolerada' },
-  'routes/whatsappVPS.js': { kind: 'internal', reason: 'rota administrativa de teste do VPS' },
+  // Alerta ao admin: chave por tipo + janela de cooldown (alert:admin:<tipo>:<janela>).
+  'middleware/whatsappGuard.js': { kind: 'guarded', via: 'guardedSend' },
+  // Envio pelo VPS: Idempotency-Key + guarda (sem chave = Agenda Externa, envia como antes).
+  'routes/whatsappVPS.js': { kind: 'human-guarded', via: 'sendManualOnce', reason: 'envio manual/Agenda pelo VPS com Idempotency-Key' },
   'controllers/authController.js': { kind: 'human', reason: 'redefinição de senha pedida pelo usuário; novo link a cada pedido' },
 };
 
@@ -104,6 +106,26 @@ test('AmandaOrchestrator (envios diretos legados) não é importado por código 
     .filter(f => f !== 'orchestrators/AmandaOrchestrator.js')
     .filter(f => /(from\s*|import\s*\()\s*['"][^'"]*AmandaOrchestrator(\.js)?['"]/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
   assert.deepEqual(importers, []);
+});
+
+test('alerta ao admin usa chave por tipo e janela, nunca envio direto', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'middleware/whatsappGuard.js'), 'utf8');
+  assert.match(src, /alert:admin:\$\{type\}:\$\{Math\.floor\(now \/ ALERT_COOLDOWN\)\}/);
+  assert.doesNotMatch(src, /await sendTemplateMessage\(/);
+});
+
+test('rota do VPS passa pelo guarda com prefixo vps:', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'routes/whatsappVPS.js'), 'utf8');
+  assert.match(src, /key: key && `vps:\$\{key\}`/);
+  assert.doesNotMatch(src, /await sendViaVPS\(/);
+});
+
+test('AmandaOrchestrator legado: todo envio direto passa por onceForInbound (sem envio sem chave)', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'orchestrators/AmandaOrchestrator.js'), 'utf8');
+  const calls = src.match(/\b(sendLocationMessage|sendTextMessage)\(\{/g) || [];
+  const wrapped = src.match(/onceForInbound\('[a-z]+', \(\) => (sendLocationMessage|sendTextMessage)\(\{/g) || [];
+  assert.equal(calls.length, wrapped.length, 'envio direto fora do guarda no AmandaOrchestrator');
+  assert.match(src, /amanda_location_skipped_without_message_id/);
 });
 
 test('a rota ativa da Amanda (FSM + agente) não chama o provedor direto', () => {

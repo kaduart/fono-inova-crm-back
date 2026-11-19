@@ -154,11 +154,15 @@ jobs:
           npm run test:envios-whatsapp-web
           npm run test:envios-manual-email
           npm run test:envios-template-midia
+          npm run test:envios-item4
           npm run test:envios-inventario
-      - name: Dispatchers do Outbox (contagem pelo código e dois ao mesmo tempo)
+      - name: Dispatchers do Outbox e workers com o Redis caindo (contagem, concorrência, queda real)
         env:
           MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
           REDIS_TEST_URL: redis://127.0.0.1:6379/7
         run: |
           npm run test:dispatchers-contagem
           npm run test:dispatchers-concorrentes
+          npm run test:dispatcher-redis-volta
+          REDIS_TEST_URL=redis://127.0.0.1:6379/8 npm run test:workers-redis-volta
+          npm run test:isolado-trava

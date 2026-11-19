@@ -60,6 +60,9 @@
     "validar:backup-ficticio": "scripts/backup/validar-restauracao-ficticia.sh",
     "test:dispatchers-contagem": "node --test tests/outbox/dispatcherCount.nodetest.mjs",
     "test:dispatchers-concorrentes": "node --test --test-force-exit tests/outbox/dispatchersConcorrentes.mongo.nodetest.mjs",
+    "test:isolado-trava": "node --test tests/isolado/runtimeGuardIsolado.nodetest.mjs",
+    "test:dispatcher-redis-volta": "node --test --test-force-exit tests/outbox/dispatcherRedisVolta.mongo.nodetest.mjs",
+    "test:workers-redis-volta": "node --test --test-force-exit tests/isolado/workersRedisVolta.mongo.nodetest.mjs",
     "agent:cenarios": "node scripts/amanda-agent-cenarios.mjs",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
     "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",
@@ -86,7 +89,8 @@
     "sanity:financial:current": "node -e \"const d=new Date(); require('child_process').spawnSync('node', ['scripts/financial-sanity-check.v2.js', d.getFullYear(), d.getMonth()+1], {stdio: 'inherit'})\"",
     "snapshot:rebuild": "node -e \"const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); const y=d.getFullYear(); console.log('POST /api/v2/financial/dashboard/rebuild-snapshot with:', {startDate:`${y}-${m}-01`, endDate:`${y}-${m}-${new Date(y,d.getMonth()+1,0).getDate()}`, clearFirst:true})\"",
     "checar:replica-local": "node scripts/isolado/checar-replica-local.mjs",
-    "test:envios-template-midia": "node --experimental-test-module-mocks --test --test-force-exit tests/delivery/manualTemplateMedia.mongo.nodetest.mjs"
+    "test:envios-template-midia": "node --experimental-test-module-mocks --test --test-force-exit tests/delivery/manualTemplateMedia.mongo.nodetest.mjs",
+    "test:envios-item4": "node --experimental-test-module-mocks --test --test-force-exit tests/delivery/item4Closures.mongo.nodetest.mjs"
   },
   "keywords": [],
   "author": "",

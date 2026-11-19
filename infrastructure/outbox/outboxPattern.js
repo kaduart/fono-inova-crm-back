@@ -24,7 +24,7 @@
 
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { getQueue } from '../queue/queueConfig.js';
+import { getQueue, evictQueue, isClosedConnectionError } from '../queue/queueConfig.js';
 import Outbox from './OutboxModel.js';
 import { eventToQueueMap } from '../events/eventPublisher.js';
 
@@ -111,6 +111,7 @@ export async function publishPendingEvents(batchSize = 100) {
   const results = { processed: 0, published: 0, failed: 0, errors: [] };
 
   for (const event of pendingEvents) {
+    let currentQueue = null;
     try {
       const queueNames = getQueueNamesForEvent(event.eventType);
 
@@ -143,6 +144,7 @@ export async function publishPendingEvents(batchSize = 100) {
       }
 
       for (const queueName of queueNames) {
+        currentQueue = queueName;
         const queue = getQueue(queueName);
 
         await queue.add(
@@ -172,6 +174,8 @@ export async function publishPendingEvents(batchSize = 100) {
       results.published++;
     } catch (error) {
       console.error(`[OutboxDispatcher] Falha ao publicar ${event.eventId}:`, error.message);
+      // Fila presa em "Connection is closed." não se recupera sozinha: recria na próxima.
+      if (currentQueue && isClosedConnectionError(error)) evictQueue(currentQueue);
 
       await Outbox.findByIdAndUpdate(event._id, {
         status: 'failed',

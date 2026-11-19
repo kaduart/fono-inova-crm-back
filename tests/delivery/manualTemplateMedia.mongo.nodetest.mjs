@@ -123,3 +123,22 @@ test('mídia: timeout fica incerto e o retry não reenvia; desconectado libera o
   assert.equal(provider.media - n0, 2);
   assert.equal(ok.body.success, true);
 });
+
+test('política on: template sem chave → 428 e provedor não é chamado; com chave envia', { skip }, async () => {
+  process.env.MANUAL_SEND_REQUIRE_KEY = 'on';
+  try {
+    const r1 = res(); await whatsappController.sendTemplate(tpl(null), r1);
+    assert.equal(r1.statusCode, 428);
+    assert.equal(provider.template, 0);
+    const r2 = res(); await whatsappController.sendTemplate(tpl('k-tpl-policy-on'), r2);
+    assert.equal(r2.body.success, true);
+    assert.equal(provider.template, 1);
+  } finally { delete process.env.MANUAL_SEND_REQUIRE_KEY; }
+});
+
+test('política padrão (log): template sem chave ainda envia (compatibilidade)', { skip }, async () => {
+  delete process.env.MANUAL_SEND_REQUIRE_KEY;
+  const r = res(); await whatsappController.sendTemplate(tpl(null), r);
+  assert.equal(r.body.success, true);
+  assert.equal(provider.template, 1);
+});
