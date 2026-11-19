@@ -517,6 +517,11 @@ function attachPageNoiseFilters(newClient) {
 }
 
 // Teto do heap JS da aba do WhatsApp Web (MB). Padrão 1024; 0 ou inválido = sem teto.
+// loading_screen depois do ready é a sincronização normal do WhatsApp Web, não travamento.
+export function shouldArmLoadingWatchdog(ready) {
+  return !ready;
+}
+
 export function chromeJsHeapArgs(env = process.env) {
   const raw = env.WHATSAPP_CHROME_JS_HEAP_MB;
   const mb = raw === undefined || raw === '' ? 1024 : Number(raw);
@@ -782,6 +787,11 @@ function createClient() {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ⏳ loading_screen ${percent}% — ${message}`);
     clearInitWatchdog();
+    // 19/11/2026: o WhatsApp Web passou a emitir loading_screen (72%, 97%, 99%) DEPOIS do ready.
+    // Isso rearmava este watchdog, que nunca era limpo (o ready não vem de novo), e o child saía
+    // a cada 10 min — recarga do WhatsApp + catch-up de 72h a cada ciclo, pico de memória e OOM
+    // (19/11: 9 saídas "Travado em loading_screen" e 11 OOMs). Já conectado: só loga.
+    if (!shouldArmLoadingWatchdog(isReady)) return;
     connectionStatus = 'connecting';
     await saveState();
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
