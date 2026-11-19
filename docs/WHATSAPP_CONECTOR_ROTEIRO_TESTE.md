@@ -18,7 +18,7 @@ Objetivo: cobrir a coluna "Sessão real" da matriz (seção 14 de `WHATSAPP_CONE
 
 ## 2. Preparação
 
-1. No repositório, entrar em `whatsapp-connector`, rodar `npm install` e depois `npm test` (esperado: 26 passando).
+1. No repositório, entrar em `whatsapp-connector`, rodar `npm ci` e depois `npm test` (esperado: 26 passando).
 2. Envs do conector:
    - `WA_CONNECTOR_SECRET=<segredo de teste>`
    - `CRM_EVENTS_URL=<API local de teste>/api/whatsapp-connector/events` (com `WA_ALLOW_HTTP_EVENTS=true` se a API for http local)

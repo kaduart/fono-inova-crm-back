@@ -132,7 +132,7 @@ Conector:
 | `WA_TAKEOVER_ON_CONFLICT` | **não definir** (padrão false, seção 9) |
 | `WA_SESSION_TAKEOVER` | só para assumir trava de outro host, com o nome dele (seção 9) |
 
-Instalação no host: `cd whatsapp-connector && npm install` (gera o lockfile; aqui na nuvem o tarball do GitHub do whatsapp-web.js é bloqueado) e `npm start`.
+Instalação no host: `cd whatsapp-connector && npm ci` (pelo lockfile versionado) e `npm start`.
 
 ## 7. Memória: medido × estimado (item 2)
 
@@ -388,7 +388,11 @@ O que tem ❌ nas três primeiras colunas depende do código que roda **dentro d
 **Versionamento:**
 - Código versionado pelos commits do repositório do CRM. `package.json` do conector: `fono-inova-whatsapp-connector` **1.0.0**.
 - `whatsapp-web.js` fixado no **commit** `58ddf15` do GitHub (o mesmo tarball do CRM), não numa faixa de versões.
-- **Ainda sem `package-lock.json`**: a nuvem bloqueia o tarball do GitHub. O primeiro `npm install` num ambiente com acesso gera o lockfile, que deve ser commitado; a partir daí usar `npm ci`.
+- **`whatsapp-connector/package-lock.json` versionado** (lockfileVersion 3): whatsapp-web.js 1.34.7 (commit `58ddf15`), puppeteer 24.38.0, qrcode 1.5.4.
+  - Gerado em 18/11 a partir do `package-lock.json` do CRM (mesmas versões e hashes de integridade que já rodam em produção), porque a nuvem bloqueia o tarball do GitHub.
+  - Conferência independente no PC do Kadu (Windows, node 24, npm 11): `npm install` + `npm ci` do zero resolveram as mesmas versões (whatsapp-web.js 1.34.7, puppeteer 24.38.0). Lá, 17 de 26 testes passam e **9 falham**. É uma incompatibilidade real com o Windows: o tar do Git-for-Windows não aceita caminho com `C:`, e o NTFS não aplica as permissões 0700/0600 que a proteção da sessão exige. **Limitação documentada: o conector só é suportado em Linux.** No Windows, a importação de sessão e a subida do conector recusam rodar.
+  - Instalação limpa no Linux: job `Conector WhatsApp (node:test)` do CI faz `npm ci` pelo lockfile, lista as versões e roda os testes.
+- Usar sempre `npm ci` (nunca `npm install`) no host.
 - Chrome fixado em **157.0.8103.38** (o mesmo de `config/chromeVersion.js`), indicado por `PUPPETEER_EXECUTABLE_PATH` ou `CHROME_PATH`.
 - O contrato (`src/contract.js`) é cópia do `services/whatsappConnector/contract.js` do CRM; um teste do CRM falha se os dois divergirem. O campo `v` dos eventos permite versões diferentes convivendo.
 
@@ -399,12 +403,12 @@ Conector (não precisa de Chrome nem rede):
 cd whatsapp-connector
 ```
 ```
-npm install
+PUPPETEER_SKIP_DOWNLOAD=true npm ci
 ```
 ```
 npm test
 ```
-Esperado: 26 testes passando. É o mesmo comando do job `Conector WhatsApp (node:test)` no CI.
+Esperado no Linux: 26 testes passando. São os mesmos comandos do job `Conector WhatsApp (node:test)` no CI.
 
 Conector com biblioteca e Chrome reais, sem sessão (precisa do Chrome fixado):
 ```
