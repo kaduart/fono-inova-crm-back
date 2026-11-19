@@ -29,7 +29,6 @@ import {
   interpretMetaResponse, interpretTiktokResponse, buildFbc,
   resolveConversionTime, shouldAcquire, eventIdFor, buildPendingClaim,
   unknownReasonFor, metaSendOptions, shouldReopenMetaForClid,
-  acquisitionPhoneVariants, ACQUISITION_SAME_PHONE_REASON,
 } from './adsConversion.logic.js';
 
 const TAG = '[AdsConversion]';
@@ -62,20 +61,6 @@ async function isAcquisitionAppointment(appt) {
   const earlierConverted = !!(await AdConversion.exists({ appointment: { $in: earlier.map(e => e._id) } }));
   const earlierEligibleExists = earlier.some(e => BOOKED_STATUSES.includes(e.operationalStatus));
   return shouldAcquire({ hasPatient: true, alreadyAcquired: false, earlierConverted, earlierEligibleExists });
-}
-
-// 19/11: o mesmo telefone já gerou aquisição nos últimos N dias (irmãos agendados pelo mesmo contato)?
-// A mais antiga continua sendo a aquisição; as seguintes entram como não-aquisição.
-const phoneWindowDays = () => Number(process.env.ADS_ACQ_PHONE_WINDOW_DAYS || 90);
-async function phoneAlreadyAcquired(phone, apptId) {
-  const variants = acquisitionPhoneVariants(phone);
-  if (!variants.length) return false;
-  return !!(await AdConversion.exists({
-    phone: { $in: variants },
-    isAcquisition: true,
-    appointment: { $ne: apptId },
-    createdAt: { $gte: new Date(Date.now() - phoneWindowDays() * 864e5) },
-  }));
 }
 
 async function resolvePhone(appt) {
@@ -134,22 +119,14 @@ async function enqueueNew() {
   const knownSet = new Set(known.map(k => String(k.appointment)));
 
   let queued = 0;
-  // 19/11: do mais ANTIGO para o mais novo. Dois agendamentos do mesmo telefone no mesmo ciclo (irmãos,
-  // 1,5 min de diferença) — o mais antigo grava a aquisição primeiro e o seguinte já a encontra.
-  for (const appt of [...candidates].reverse()) {
+  for (const appt of candidates) {
     if (knownSet.has(String(appt._id))) continue;
     try {
-      let first = await isAcquisitionAppointment(appt);
+      const first = await isAcquisitionAppointment(appt);
       // 18/11: telefone e origem também para quem NÃO é 1º agendamento. Antes ficavam null e a conversão
       // nascia "Não identificado" para sempre (o refresh só olha quem tem telefone). Os envios continuam
       // pulados (decidePlatforms com first=false não devolve gclid/fbc/ttclid/clid).
       const phone = await resolvePhone(appt);
-      let skipReason = null;
-      if (first && phone && await phoneAlreadyAcquired(phone, appt._id)) {
-        first = false;
-        skipReason = ACQUISITION_SAME_PHONE_REASON;
-        console.log(`${TAG} ${appt._id} não é aquisição: o mesmo telefone já gerou aquisição (irmão/família)`);
-      }
       const attrByPhone = phone ? await getAttributionByPhone(phone) : null;
       const attr = first ? await withGclidFallback({ leadId: appt.lead || null, phone, attr: attrByPhone }) : attrByPhone;
       const value = Number(appt.sessionValue) > 0 ? Number(appt.sessionValue) : defaultValue();
@@ -157,7 +134,7 @@ async function enqueueNew() {
       // #2 event_time = data COMPROVADA em que o agendamento virou conversão (transição no
       // histórico p/ status booked); sem evidência, cai para createdAt. Nunca updatedAt genérico.
       const eventTime = resolveConversionTime(appt);
-      const d = decidePlatforms({ first, phone, attr, eventTimeMs: eventTime.getTime(), skipReason });
+      const d = decidePlatforms({ first, phone, attr, eventTimeMs: eventTime.getTime() });
       const doc = {
         appointment: appt._id,
         patient: appt.patient || null,   // #3 dedupe por paciente (índice parcial único no DB)
@@ -521,5 +498,5 @@ export function initAdsConversionCron() {
   return { stop: () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } } };
 }
 
-export { runOnce as runAdsConversionOnce, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, fillMissingCtwaClid, fillPhoneForNonAcquisition, isAcquisitionAppointment, resolvePhone, phoneAlreadyAcquired };
+export { runOnce as runAdsConversionOnce, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, fillMissingCtwaClid, fillPhoneForNonAcquisition, isAcquisitionAppointment, resolvePhone };
 export default { initAdsConversionCron };
