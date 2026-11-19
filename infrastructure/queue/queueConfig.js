@@ -90,6 +90,31 @@ export function getQueue(name) {
     return queues.get(name);
 }
 
+/**
+ * "Connection is closed." numa fila = o objeto Queue ficou inutilizável.
+ * Acontece quando a fila é criada no primeiro uso do Redis (lazyConnect) com o
+ * Redis fora do ar: a conexão compartilhada volta, mas essa Queue continua
+ * recusando tudo até o processo reiniciar (reproduzido no ambiente integrado,
+ * item 7). Filas criadas depois funcionam.
+ */
+export function isClosedConnectionError(err) {
+    return /Connection is closed/i.test(String(err?.message || err || ''));
+}
+
+/**
+ * Tira a fila do cache; o próximo getQueue(name) cria outra. Não fecha a conexão
+ * compartilhada (a Queue foi criada com uma instância IORedis existente).
+ * @returns {boolean} true se havia fila em cache.
+ */
+export function evictQueue(name) {
+    const q = queues.get(name);
+    if (!q) return false;
+    queues.delete(name);
+    Promise.resolve().then(() => q.close()).catch(() => {});
+    console.warn(JSON.stringify({ msg: 'queue_evicted_closed_connection', queue: name }));
+    return true;
+}
+
 // Graceful shutdown
 export async function closeQueues() {
     console.log('[Queue] Fechando todas as filas...');

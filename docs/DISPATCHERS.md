@@ -60,3 +60,15 @@ Inventário lido em 18/11 (memória do projeto):
 Daqui não há acesso ao Render: a API (`api.render.com`) é recusada pelo proxy desta sessão e não existe chave configurada. O que o Kadu precisa conferir no painel (só leitura) para fechar este item:
 1. Variáveis `ENABLE_WORKERS`, `WORKER_GROUP`, `ENABLE_OUTBOX_DISPATCHER` e `ENABLE_RECONCILIATION_OUTBOX` em `fono-inova-crm-back` e em `crm-worker`.
 2. Nos logs de cada serviço, quantas vezes aparece `[OutboxDispatcher] Iniciado` desde o último deploy.
+
+## Fila presa em "Connection is closed." depois de queda do Redis (verificado em 19/11)
+
+Achado no ambiente integrado (item 7). A conexão Redis do CRM usa `lazyConnect`. Se o **primeiro** uso do Redis por um processo acontece com o Redis fora do ar, a `Queue` do BullMQ criada nesse momento fica inutilizável. A conexão compartilhada volta (`Redis ready`), mas essa fila recusa tudo com `Connection is closed.` até o processo reiniciar. Filas criadas depois funcionam. É o mesmo `lastError` dos `failed` em produção.
+
+Correção: `publishPendingEvents` chama `evictQueue(fila)` quando a publicação falha com `Connection is closed.`, e o próximo `getQueue` cria outra fila (`infrastructure/queue/queueConfig.js`). O evento fica `failed`. O dispatcher do Node não reprocessa `failed`; quem devolve a `pending` é a recuperação da KAS (`kas-outbox-recovery`).
+
+Testes:
+- `tests/outbox/dispatcherRedisVolta.mongo.nodetest.mjs`: reprodução real com um proxy TCP na frente do Redis. Falha sem a correção (0/1) e passa com ela (1/1).
+- Ambiente integrado, cenário 7.8: API, workers, `docker stop/start` do Redis e KAS.
+
+Não verificado: se os `Worker` do BullMQ têm o mesmo problema quando o processo de worker sobe com o Redis fora do ar.

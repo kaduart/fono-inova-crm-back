@@ -163,3 +163,5 @@ jobs:
         run: |
           npm run test:dispatchers-contagem
           npm run test:dispatchers-concorrentes
+          npm run test:dispatcher-redis-volta
+          npm run test:isolado-trava
