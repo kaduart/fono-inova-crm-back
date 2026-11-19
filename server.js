@@ -1019,6 +1019,13 @@ process.on('SIGTERM', async () => {
       console.error('Erro ao parar workers:', err.message);
     }
   }
+  // Devolve a posse do reaper (se este processo tiver), para a troca Node ↔ KAS não esperar o prazo.
+  try {
+    const { stopAllCronsAndRelease } = await import('./config/cronManager.js');
+    await stopAllCronsAndRelease();
+  } catch (err) {
+    console.error('Erro ao parar crons:', err.message);
+  }
   process.exit(0);
 });
 

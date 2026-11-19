@@ -37,7 +37,9 @@ const NOT_SENT_PATTERNS = [
     /EAI_AGAIN/i,
     /Número de telefone inválido/i,
     /invalid (phone|recipient|email)/i,
-    /não está conectado.*Escaneie o QR code/i
+    /não está conectado.*Escaneie o QR code/i,
+    // Configuração ausente: o cliente do provedor nem foi criado.
+    /(API_KEY|credencial|chave).*não configurad[ao]/i
 ];
 
 /**

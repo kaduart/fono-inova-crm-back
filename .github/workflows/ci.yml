@@ -134,6 +134,14 @@ jobs:
             sleep 2
           done
           npm run test:pagamentos-idempotencia
+      - name: Recebimento, rotas financeiras paralelas e B-1 pela camada HTTP (node:test, replica set descartável)
+        env:
+          MONGO_TXN_TEST_URI: mongodb://127.0.0.1:27018/?directConnection=true
+          REDIS_URL: redis://127.0.0.1:6379
+        run: |
+          npm run test:recebimento-idempotente
+          npm run test:pagamentos-rotas-paralelas
+          npm run test:reaper-posse-compartilhada
       - name: Proteção contra reenvio de WhatsApp/e-mail (node:test, provedor simulado)
         env:
           MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
@@ -141,8 +149,11 @@ jobs:
       - name: Fila do WhatsApp Web com o guard e inventário dos caminhos de envio (node:test)
         env:
           MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+          REDIS_TEST_URL: redis://127.0.0.1:6379/7
         run: |
           npm run test:envios-whatsapp-web
+          npm run test:envios-manual-email
+          npm run test:envios-template-midia
           npm run test:envios-inventario
       - name: Dispatchers do Outbox (contagem pelo código e dois ao mesmo tempo)
         env:

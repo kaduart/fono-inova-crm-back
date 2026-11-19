@@ -30,7 +30,9 @@ const INVENTORY = {
   // Camada de transporte: é o que os caminhos acima chamam.
   'services/whatsappService.js': { kind: 'transport', reason: 'Cloud API + fallback WhatsApp Web; protegido pelo chamador' },
   // Fora da proteção, de propósito:
-  'controllers/whatsappController.js': { kind: 'human', reason: 'secretária envia pelo chat; clicar de novo é intenção' },
+  // Texto, template e mídia manuais usam Idempotency-Key + guarda quando o front manda a
+  // chave (sem chave = cliente antigo, envia como antes).
+  'controllers/whatsappController.js': { kind: 'human-guarded', via: 'sendManualOnce', reason: 'texto, template e mídia manuais com Idempotency-Key' },
   'middleware/whatsappGuard.js': { kind: 'internal', reason: 'alerta ao admin; repetição tolerada' },
   'routes/whatsappVPS.js': { kind: 'internal', reason: 'rota administrativa de teste do VPS' },
   'controllers/authController.js': { kind: 'human', reason: 'redefinição de senha pedida pelo usuário; novo link a cada pedido' },
@@ -56,7 +58,7 @@ test('todo arquivo que importa uma função de envio está classificado', () => 
 
 test('caminhos automáticos marcados como protegidos usam o guarda', () => {
   for (const [file, c] of Object.entries(INVENTORY)) {
-    if (c.kind !== 'guarded') continue;
+    if (c.kind !== 'guarded' && c.kind !== 'human-guarded') continue;
     const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
     assert.match(src, new RegExp(`\\b${c.via}\\b`), `${file} deveria usar ${c.via}`);
   }
@@ -71,6 +73,47 @@ test('o helper do WhatsApp Web usa o guarda com chave pelo jobId', () => {
 test('e-mail automático passa pelo provedor com registro por job', () => {
   const src = fs.readFileSync(path.join(ROOT, 'services/communication/delivery/EmailDeliveryProvider.js'), 'utf8');
   assert.match(src, /idempotency/i);
+});
+
+test('e-mail de convênio reserva a chave por jobId no guarda antes do provedor', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'services/communication/delivery/EmailDeliveryProvider.js'), 'utf8');
+  assert.match(src, /guardedSend/);
+  assert.match(src, /email:convenio:\$\{jobId\}/);
+});
+
+test('amanda-resume: chave pela mensagem respondida, nunca pelo relógio', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'controllers/whatsappController.js'), 'utf8');
+  assert.doesNotMatch(src, /amanda-resume:\$\{[^}]*\}:\$\{Date\.now\(\)\}/);
+  assert.match(src, /amanda-resume:\$\{String\(leadId\)\}:\$\{String\(lastInbound\.waMessageId/);
+});
+
+test('envio manual (texto x2, template, mídia) passa pelo guarda', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'controllers/whatsappController.js'), 'utf8');
+  assert.equal((src.match(/sendManualOnce\(\{/g) || []).length, 4);
+  assert.match(src, /key: manualKey && `tpl:\$\{manualKey\}`/);
+  assert.match(src, /key: manualKey && `media:\$\{manualKey\}:\$\{fileHash\}`/);
+});
+
+// Amanda: as respostas ativas saem pela fila (whatsappAutoReplyWorker -> WhatsappSendWorker,
+// chave amanda-reply/amanda-resume). O AmandaOrchestrator antigo ainda tem envios diretos
+// (localização sem id de entrada, tryManualResponse), mas nenhum módulo de produção o importa.
+// Se alguém voltar a importá-lo, este teste falha e o caminho precisa ser revisto.
+test('AmandaOrchestrator (envios diretos legados) não é importado por código de produção', () => {
+  const importers = walk(ROOT)
+    .map(f => path.relative(ROOT, f).split(path.sep).join('/'))
+    .filter(f => f !== 'orchestrators/AmandaOrchestrator.js')
+    .filter(f => /(from\s*|import\s*\()\s*['"][^'"]*AmandaOrchestrator(\.js)?['"]/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+  assert.deepEqual(importers, []);
+});
+
+test('a rota ativa da Amanda (FSM + agente) não chama o provedor direto', () => {
+  const files = ['orchestrators/WhatsAppOrchestrator.js', 'services/orchestrator/runOrchestrator.js'];
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    assert.doesNotMatch(src, /\b(sendTextMessage|sendTemplateMessage|sendLocationMessage|sendWhatsAppMediaMessage)\s*\(/, f);
+  }
+  const auto = fs.readFileSync(path.join(ROOT, 'domains/whatsapp/workers/whatsappAutoReplyWorker.js'), 'utf8');
+  assert.match(auto, /amanda-reply:\$\{String\(leadDoc\._id\)\}:\$\{wamid\}/);
 });
 
 test('inventário não aponta para arquivo que não existe mais', () => {

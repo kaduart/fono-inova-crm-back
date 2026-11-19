@@ -20,7 +20,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { redisConnection } from '../../config/redisConnection.js';
-import { startAllCrons, stopAllCrons } from '../../config/cronManager.js';
+import { startAllCrons, stopAllCronsAndRelease } from '../../config/cronManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,14 +107,14 @@ function startEventLoopMonitor() {
 // ======================================================
 process.on('SIGTERM', async () => {
   console.log('\n🛑 [cron-worker] SIGTERM recebido, parando crons...');
-  stopAllCrons();
+  await stopAllCronsAndRelease();
   await mongoose.connection.close(false);
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('\n🛑 [cron-worker] SIGINT recebido, parando crons...');
-  stopAllCrons();
+  await stopAllCronsAndRelease();
   await mongoose.connection.close(false);
   process.exit(0);
 });

@@ -541,6 +541,16 @@ export async function reconcilePatientBalanceDebit(payment, { mongoSession, user
     return { reconciled: true, debitId: debit._id, settleAmount, fullyPaid: willBeFullyPaid };
 }
 
+async function nextFreeOutboxEventId(baseKey, mongoSession) {
+    // Sem conexão (testes unitários com outbox simulado) não há o que consultar:
+    // a consulta ficaria presa no buffer do Mongoose.
+    if (Outbox.db?.readyState !== 1) return baseKey;
+    const ids = await Outbox.find({ eventId: { $regex: `^${baseKey}(_r\\d+)?$` } })
+        .select('eventId').session(mongoSession || null).lean();
+    if (!ids.length) return baseKey;
+    return `${baseKey}_r${ids.length + 1}`;
+}
+
 export async function transitionPaymentStatus(paymentId, newStatus, options = {}) {
     const {
         financialDate,
@@ -724,7 +734,11 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     let event = null;
     if (!silent) {
         try {
-            const idempotencyKey = `${paymentId}_${oldStatus}_${newStatus}_${moment.tz(TIMEZONE).format('YYYY-MM-DD')}`;
+            // Uma transição real por chamada (status igual é no-op acima), então
+            // a mesma transição de novo no mesmo dia (pagar → estornar → pagar)
+            // é OUTRO evento: ganha sufixo em vez de ser descartado como duplicado.
+            const baseKey = `${paymentId}_${oldStatus}_${newStatus}_${moment.tz(TIMEZONE).format('YYYY-MM-DD')}`;
+            const idempotencyKey = await nextFreeOutboxEventId(baseKey, mongoSession);
             event = await saveToOutbox(
                 {
                     eventId: idempotencyKey,

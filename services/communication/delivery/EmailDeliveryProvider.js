@@ -16,6 +16,7 @@ import Convenio from '../../../models/Convenio.js';
 import { sendEmailWithAttachments } from '../../emailService.js';
 import { getEmailProviderName } from '../../email/EmailProviderFactory.js';
 import { SUBJECT_BY_PURPOSE } from './_deliveryUtils.js';
+import { guardedSend, DeliveryOutcome } from '../../../infrastructure/delivery/deliveryGuard.js';
 
 const QUEUE_NAME = 'communication-email';
 
@@ -292,20 +293,49 @@ export class EmailDeliveryProvider {
     let logStatus = EmailLogStatus.SUCCESS;
     let errorMessage = null;
 
+    const sendNow = () => sendEmailWithAttachments({
+      to: destination,
+      subject: resolvedSubject,
+      html,
+      text,
+      attachments,
+      customId: emailIdempotencyKey,
+      idempotencyKey: emailIdempotencyKey,
+      inReplyTo,
+      fromEmail: process.env.BILLING_EMAIL_FROM || 'financeiro@clinicafonoinova.com.br',
+      fromName: process.env.BILLING_EMAIL_FROM_NAME || 'Financeiro - Clínica Fono Inova',
+      cc: 'clinicafonoinova@gmail.com'
+    });
+
     try {
-      result = await sendEmailWithAttachments({
-        to: destination,
-        subject: resolvedSubject,
-        html,
-        text,
-        attachments,
-        customId: emailIdempotencyKey,
-        idempotencyKey: emailIdempotencyKey,
-        inReplyTo,
-        fromEmail: process.env.BILLING_EMAIL_FROM || 'financeiro@clinicafonoinova.com.br',
-        fromName: process.env.BILLING_EMAIL_FROM_NAME || 'Financeiro - Clínica Fono Inova',
-        cc: 'clinicafonoinova@gmail.com'
-      });
+      if (jobId) {
+        // Reserva atômica por jobId ANTES do provedor. A leitura do log no
+        // início não basta: duas execuções simultâneas do mesmo job (dois
+        // workers, reentrega do BullMQ) passavam juntas por ela e enviavam
+        // duas vezes. Só a que reserva envia; resultado incerto não reenvia.
+        const delivery = await guardedSend({
+          channel: 'email',
+          deliveryKey: `email:convenio:${jobId}`,
+          destination,
+          send: sendNow,
+          providerMessageIdOf: (r) => r?.resendMessageId || r?.messageId || null
+        });
+        if (delivery.outcome === DeliveryOutcome.ALREADY_SENT || delivery.outcome === DeliveryOutcome.IN_PROGRESS) {
+          // Esta execução não enviou: a linha PENDING que ela criou sairia na
+          // aba "Envios" como um segundo envio. Remove (só se foi criada aqui).
+          if (pendingLog && !logToReuse) await CommunicationEmailLog.deleteOne({ _id: pendingLog._id, status: EmailLogStatus.PENDING });
+          const winner = await CommunicationEmailLog.findOne({ jobId, _id: { $ne: pendingLog?._id } }).sort({ createdAt: -1 }).lean();
+          return delivery.outcome === DeliveryOutcome.ALREADY_SENT
+            ? { success: true, log: winner, duplicate: true }
+            : { success: false, log: winner, error: new Error(`Job ${jobId} já está sendo enviado por outra execução`) };
+        }
+        if (delivery.outcome === DeliveryOutcome.UNCERTAIN) {
+          throw new Error(`Resultado do envio incerto (job ${jobId}); não reenviado automaticamente. Confira a caixa de saída antes de reenviar.`);
+        }
+        result = delivery.result;
+      } else {
+        result = await sendNow();
+      }
     } catch (error) {
       logStatus = EmailLogStatus.ERROR;
       errorMessage = error?.message || 'Erro ao enviar e-mail';

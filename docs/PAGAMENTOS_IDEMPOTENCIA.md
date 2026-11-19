@@ -120,3 +120,46 @@ MONGO_TXN_TEST_URI='mongodb://127.0.0.1:27017/?directConnection=true' npm run te
 - São 15 casos: identidade; aplicação atômica; repetição; 12 concorrentes; conflito sequencial e concorrente; falha intermediária; reinício; chaves distintas; corrida de criação do saldo; balance_credit; multi (concorrência, débito já pago, chaves concorrentes, débito inexistente); preflight.
 - O CI sobe um Mongo replica set separado na porta 27018 e roda esse comando.
 - Suíte vitest local, main contra esta branch no mesmo ambiente: o mesmo conjunto de falhas, sem regressão nova. É **ambiente sem Redis**, então não equivale ao CI.
+
+## 8. Rotas paralelas (create-sync, bulk-settle, PATCH, crédito direto) e B-1
+
+Rodada de 18/11 (noite). Estas rotas movem dinheiro **fora** do `/request` e do `/receive`. As regras financeiras continuam no CRM; só a identidade da operação e a resposta à repetição mudaram.
+
+| Rota | Antes | Agora |
+|---|---|---|
+| `POST /v2/payments/create-sync` (marcar sessão avulsa como paga) | Repetição: 500 (o índice `unique_active_payment_per_appt_billingtype_role` barrava o 2º Payment, mas a tela via erro). Concorrência: 500 por conflito de escrita. Sem `Idempotency-Key` | Com `Idempotency-Key`: recibo `payop:create_sync:...` em `payment_operations` na mesma transação; repetição devolve o mesmo Payment (200, `idempotent: true`); mesma chave com outro valor ou agendamento: 409 `IDEMPOTENCY_KEY_CONFLICT`. Sem chave, com agendamento: devolve o Payment ativo do agendamento. Conflito simultâneo: 409 `PAYMENT_IN_PROGRESS` (nada gravado por aquela requisição) |
+| `POST /v2/payments/bulk-settle` | Já deduplicava pelo conjunto (`bulkSettlementKey`) e pelo filtro `status: 'pending'`. Repetição respondia **409** (erro na tela de algo que deu certo) | Repetição devolve o **mesmo recibo** (200, `idempotent: true`, `code: BULK_SETTLEMENT_ALREADY_EXISTS`). Conflito simultâneo: 409 `PAYMENT_IN_PROGRESS` |
+| `PATCH /v2/payments/:id` | Concorrência: 500 (conflito de escrita). **Pagar → estornar → pagar no mesmo dia falhava** com 500: o evento do Outbox tinha o mesmo `eventId` do dia e o E11000 abortava a transação | Conflito simultâneo: 409 `PAYMENT_IN_PROGRESS`. A mesma transição de novo no dia ganha `eventId` com sufixo `_rN`. `saveToOutbox` com session verifica antes de inserir (o E11000 dentro de transação aborta tudo) |
+| `POST /v2/balance/:patientId/credit` → `balanceWorker` | **Reentrega do evento creditava de novo** (o worker só lembrava do evento num `Map` em memória: reinício, retry ou 2 workers creditavam 2×, 3×...). **Sem chave, todo crédito do paciente tinha a mesma chave** (`<paciente>_balance_credit`): depois do primeiro processado, os seguintes eram descartados como duplicados e a rota respondia 202 "enfileirado". Debounce também respondia 202 sem enfileirar | Crédito + recibo `payop:balance_credit_direct:<idempotencyKey>` na mesma transação. Com `Idempotency-Key`: chave estável, repetição devolve o mesmo `eventId`, outro valor é 409. Sem chave: chave única por requisição; clique duplo em 5 s é 409 `PAYMENT_DEBOUNCED` (não mais 202 falso) |
+
+Front (`fono-inova-crm-front`): `createSyncPayment` e `bulkSettlePayments` em `src/services/paymentService.ts` mandam `Idempotency-Key` pelo mesmo remetente do `/request`. O crédito direto não é chamado pelo front hoje.
+
+### B-1 esclarecido
+
+Convenção do sistema, conferida no código: `currentBalance > 0` = paciente **deve**.
+- `completeSessionService.v2.js` e `particularHandler.js`: `financialStatus = currentBalance > 0.001 ? 'unpaid' : 'paid'`.
+- `financialMetrics.service.js`: "saldo devedor total = soma de `currentBalance > 0`".
+- `PatientBalance.addCredit`: `currentBalance -= valor`.
+
+Logo crédito **reduz** `currentBalance`. Testes que fixam isso nos três caminhos de crédito:
+- `paymentWorker` `balance_credit` (teste "balance_credit: crédito reduz o saldo devedor", em `paymentIdempotency.mongo.nodetest.mjs`): 500 − 180 = 320;
+- `balanceWorker` crédito direto (`rotasParalelas`): dívida 220 + crédito 220 = 0;
+- `PatientBalance.addCredit` (`rotasParalelas`): 300 − 100 = 200.
+
+O que **não** dá para afirmar daqui: se algum crédito antigo em produção foi gravado com o sinal invertido. O preflight de 18/11 (rodado pelo Kadu, só leitura) contou C = 0, então não há dado legado a corrigir.
+
+### O que continua sem garantia
+
+- Sem `Idempotency-Key` e sem agendamento, `create-sync` cria um lançamento por requisição (é como o front antigo funciona).
+- Sem chave, dois créditos diretos iguais com mais de 5 s entre eles são duas operações.
+- Os efeitos depois do commit (projeções, cache) continuam pelo menos uma vez.
+- O índice `unique_active_payment_per_appt_billingtype_role` é definido no modelo; em produção o `autoIndex` é desligado. Sem ele, a corrida de `create-sync` sem chave ainda é serializada pela escrita no mesmo `Appointment` dentro da transação.
+
+### Testes
+
+```
+MONGO_TXN_TEST_URI='mongodb://127.0.0.1:27217/?directConnection=true' REDIS_URL=redis://127.0.0.1:6479 \
+  npm run test:pagamentos-rotas-paralelas
+```
+
+21 casos: create-sync (6), bulk-settle (4), PATCH (3), crédito direto (6), B-1 (2). Contra o código anterior, 12 dos 19 casos iniciais falhavam (o crédito reentregue chegou a creditar 4×; os 2 casos de crédito sem chave foram escritos depois, a partir do achado).

@@ -40,8 +40,12 @@ run "Dead-letters com auth (12)"                         npm run -s test:observa
 run "Observabilidade: público mínimo, staff e admin (6)" env REDIS_URL="redis://127.0.0.1:${RPORT}" npm run -s test:observability-acesso
 run "Pagamentos: idempotência e atomicidade (15)"        npm run -s test:pagamentos-idempotencia
 run "Recebimento (/receive) pela camada HTTP (9)"        env REDIS_URL="redis://127.0.0.1:${RPORT}" npm run -s test:recebimento-idempotente
+run "Rotas financeiras paralelas e B-1 pela HTTP (21)"   env REDIS_URL="redis://127.0.0.1:${RPORT}" npm run -s test:pagamentos-rotas-paralelas
+run "Posse do reaper compartilhada Node/KAS (16)"         npm run -s test:reaper-posse-compartilhada
 run "Envios: anti-reenvio, provedor simulado (9)"        npm run -s test:envios-anti-reenvio
 run "Envios: fila do WhatsApp Web com o guard (6)"       npm run -s test:envios-whatsapp-web
+run "Envios: manual com Idempotency-Key e e-mail convênio (9)" npm run -s test:envios-manual-email
+run "Envios: template e mídia manuais pelo controller (6)" npm run -s test:envios-template-midia
 run "Envios: inventário dos caminhos de envio (6)"       npm run -s test:envios-inventario
 run "Dispatchers: contagem pelo código (3)"              npm run -s test:dispatchers-contagem
 run "Dispatchers: dois ao mesmo tempo (2)"               env REDIS_TEST_URL="redis://127.0.0.1:${RPORT}/7" npm run -s test:dispatchers-concorrentes

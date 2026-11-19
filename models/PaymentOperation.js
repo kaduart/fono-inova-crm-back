@@ -20,7 +20,9 @@ const paymentOperationSchema = new mongoose.Schema({
     kind: {
         type: String,
         // financial_receive: POST /api/v2/financial/receive (síncrono, sem worker).
-        enum: ['multi_payment', 'standalone', 'balance_credit', 'financial_receive'],
+        // create_sync: POST /api/v2/payments/create-sync (síncrono).
+        // balance_credit_direct: POST /api/v2/balance/:id/credit, aplicado no balanceWorker.
+        enum: ['multi_payment', 'standalone', 'balance_credit', 'financial_receive', 'create_sync', 'balance_credit_direct'],
         required: true
     },
     // SHA-256 dos campos financeiros da requisição. Mesma chave com outro

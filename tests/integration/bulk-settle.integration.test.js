@@ -173,14 +173,17 @@ describe('POST /payments/bulk-settle', () => {
         expect(res1.status).toBe(200);
         expect(res1.body.data.totalSettled).toBe(300);
 
-        // Segunda chamada com os mesmos IDs deve ser bloqueada por idempotência
+        // Segunda chamada com os mesmos IDs: idempotência devolve o MESMO recibo
+        // (200, idempotent) sem quitar nada de novo. Antes era 409 e a tela
+        // mostrava erro de uma quitação que tinha dado certo (retentativa após timeout).
         const res2 = await request(server)
             .post('/payments/bulk-settle')
             .send({ paymentIds: ids, paymentMethod: 'pix' });
-        expect(res2.status).toBe(409);
-        expect(res2.body.success).toBe(false);
+        expect(res2.status).toBe(200);
+        expect(res2.body.success).toBe(true);
+        expect(res2.body.idempotent).toBe(true);
         expect(res2.body.code).toBe('BULK_SETTLEMENT_ALREADY_EXISTS');
-        expect(res2.body.error).toMatch(/já existe|Fechamento já realizado/i);
+        expect(String(res2.body.data.receiptId)).toBe(String(res1.body.data.receiptId));
 
         const settlements = await Payment.find({
             patient: patient._id,
@@ -418,7 +421,8 @@ describe('POST /payments/bulk-settle', () => {
             const second = await request(server)
                 .post('/payments/bulk-settle')
                 .send({ paymentIds: [payment._id.toString()], paymentMethod: 'pix' });
-            expect(second.status).toBe(409);
+            expect(second.status).toBe(200);
+            expect(second.body.idempotent).toBe(true);
             expect(second.body.code).toBe('BULK_SETTLEMENT_ALREADY_EXISTS');
 
             // Cache permanece intacto: a chamada abortada não invalidou nada

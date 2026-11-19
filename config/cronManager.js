@@ -39,6 +39,24 @@ export function stopAllCrons() {
     activeCrons.clear();
 }
 
+/**
+ * Parada limpa: igual a stopAllCrons, mas espera quem sabe devolver recursos
+ * (o reaper devolve a posse compartilhada com a KAS, para o próximo dono
+ * assumir na hora em vez de esperar o prazo vencer).
+ */
+export async function stopAllCronsAndRelease() {
+    const entries = Array.from(activeCrons.entries());
+    activeCrons.clear();
+    for (const [name, cron] of entries) {
+        try {
+            if (cron && typeof cron.stopAndRelease === 'function') await cron.stopAndRelease();
+            else if (cron && typeof cron.stop === 'function') cron.stop();
+        } catch (e) {
+            console.error(`[CronManager] Falha ao parar '${name}':`, e.message);
+        }
+    }
+}
+
 export function listActiveCrons() {
     return Array.from(activeCrons.keys());
 }
@@ -66,6 +84,22 @@ export function resolveEventReaperOwner(env = process.env) {
     return v;
 }
 
+/**
+ * EVENT_REAPER_OWNER=kas. Com a posse compartilhada on, o Node fica em modo
+ * cedente (só renova a marca; a KAS com a guarda age). Com off/ausente, o Node
+ * não sobe nada e a KAS com a guarda também fica parada: ninguém recupera.
+ * Isso é registrado alto no log, porque não é um estado de troca válido.
+ */
+export async function startReaperYieldIfShared(env = process.env) {
+    const { sharedLeaseModeFromEnv } = await import('../infrastructure/events/reaperLease.js');
+    if (sharedLeaseModeFromEnv(env) === 'on') {
+        const { initEventReaperParticipantCron } = await import('../crons/eventReaper.cron.js');
+        return startCron('eventReaperYield', () => initEventReaperParticipantCron());
+    }
+    console.warn("[CronManager] ⚠️ eventReaper não iniciado: EVENT_REAPER_OWNER=kas SEM EVENT_REAPER_SHARED_LEASE=on. A KAS com a guarda não age sem a marca do Node: nenhum reaper ativo. Use on (docs/EVENTSTORE_OWNERSHIP.md §11.2)");
+    return null;
+}
+
 export async function startAllCrons() {
     // Valida antes de iniciar qualquer cron: configuração inválida falha inteira.
     const reaperOwner = resolveEventReaperOwner();
@@ -79,7 +113,7 @@ export async function startAllCrons() {
         const { initEventReaperCron } = await import("../crons/eventReaper.cron.js");
         startCron('eventReaper', () => initEventReaperCron());
     } else {
-        console.log("[CronManager] ⏭️ eventReaper não iniciado: EVENT_REAPER_OWNER=kas (reaper da KAS Core é o dono)");
+        await startReaperYieldIfShared();
     }
 
     const { scheduleFinancialSnapshotAudit } = await import("../crons/financialSnapshotAudit.cron.js");
