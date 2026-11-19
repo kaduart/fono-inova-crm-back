@@ -31,6 +31,13 @@ leadAttribution (por telefone)┘                                              �
 ### Etapas do cron (`runOnce`, a cada 10 min)
 1. `enqueueNew()` — pega agendamentos (15 min a 30 dias), resolve origem por telefone, grava `AdConversion`.
    Só o **1º agendamento do paciente** é enviado (demais → `skipped`).
+   **Desde 19/11/2026 o pré-agendamento REAL conta como agendamento novo** (link do site, agenda externa,
+   triagem, recepção): entra na fila com `event_time = createdAt` (a confirmação depois usa o MESMO
+   documento, então não duplica). Continua fora a projeção do sistema que também nasce `pre_agendado`:
+   sessões de plano de convênio (`insurancePlan` / `metadata.origin.source=insurance_plan`), liminar,
+   plano terapêutico e sessão de pacote (`isSystemProjection` em `adsConversion.logic.js`).
+   Desligar sem deploy: `ADS_CONVERSION_PRE_AGENDADO=false`. Pré-agendamento cancelado/expirado depois
+   de enviado não é estornado (a Meta não tem estorno; no Google dá para ajustar pela ação de conversão).
 2. `refreshUnknownSources()` — reatribui docs `source=unknown` quando a origem chega depois; reabre o envio
    da plataforma cujo clickId surgiu (Google 90d / TikTok 7d).
 3. `processPending()` — envia pendentes com retry/backoff (20m, 40m, 80m, 160m; máx 5 tentativas).

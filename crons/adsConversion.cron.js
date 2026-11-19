@@ -14,6 +14,7 @@
 //   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (a mesma do feed google-offline.csv)
 //   GOOGLE_ADS_EVAL_DONE_ACTION_ID    id da ação SEPARADA "Avaliação realizada" (sem ele: desligado)
 //   TIKTOK_EVENTS_TOKEN               Access Token da TikTok Events API (envio por ttclid)
+//   ADS_CONVERSION_PRE_AGENDADO=false desliga a conversão do pré-agendamento real (default: ligado, 19/11)
 // Nunca envia dado clínico: só telefone (hash), valor, id e origem.
 // Doc: back/docs/ADS_CONVERSION_CONTRACT.md
 
@@ -25,7 +26,8 @@ import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
 import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
 import { sendEventToTikTok } from '../services/tiktokConversionsService.js';
 import {
-  BOOKED_STATUSES, resolveMainPhone, decidePlatforms,
+  resolveMainPhone, decidePlatforms,
+  isConversionCandidate, conversionStatusFilter, isPreAgendamentoEnabled,
   interpretMetaResponse, interpretTiktokResponse, buildFbc,
   resolveConversionTime, shouldAcquire, eventIdFor, buildPendingClaim,
   unknownReasonFor, metaSendOptions, shouldReopenMetaForClid,
@@ -56,10 +58,12 @@ async function isAcquisitionAppointment(appt) {
     patient: appt.patient,
     _id: { $ne: appt._id },
     createdAt: { $lt: appt.createdAt },
-  }).select('_id operationalStatus').lean();
+  }).select('_id operationalStatus insurancePlan liminarContract therapeuticPlan package billingType serviceType metadata.origin.source').lean();
   if (!earlier.length) return true;
   const earlierConverted = !!(await AdConversion.exists({ appointment: { $in: earlier.map(e => e._id) } }));
-  const earlierEligibleExists = earlier.some(e => BOOKED_STATUSES.includes(e.operationalStatus));
+  // 19/11: um pré-agendamento real anterior também é âncora (ele é a aquisição, não este).
+  const includePreAgendamento = isPreAgendamentoEnabled();
+  const earlierEligibleExists = earlier.some(e => isConversionCandidate(e, { includePreAgendamento }));
   return shouldAcquire({ hasPatient: true, alreadyAcquired: false, earlierConverted, earlierEligibleExists });
 }
 
@@ -97,18 +101,19 @@ async function withGclidFallback({ leadId, phone, attr }) {
 async function enqueueNew() {
   const now = Date.now();
   const windowStart = new Date(now - LOOKBACK_DAYS * 864e5);
+  const includePreAgendamento = isPreAgendamentoEnabled();
   const candidates = await Appointment.find({
-    operationalStatus: { $in: BOOKED_STATUSES }, // #2 só agendamento real (exclui pre_agendado/projeção)
-    createdAt: { $lte: new Date(now - MIN_AGE_MS) }, // espera 15 min mesmo em confirmação tardia
-    // #5 Confirmação tardia: um pre_agendado antigo que vira scheduled DEPOIS de 30 dias tem
-    // createdAt fora da janela, mas updatedAt recente. Aceitar createdAt OU updatedAt impede
-    // que ele desapareça do processamento (o envio ainda respeita a janela de 7d por plataforma).
-    $or: [
-      { createdAt: { $gte: windowStart } },
-      { updatedAt: { $gte: windowStart } },
+    $and: [
+      // #2 agendamento real (booked) + pré-agendamento REAL (19/11); projeção do sistema fica fora
+      conversionStatusFilter({ includePreAgendamento }),
+      // #5 Confirmação tardia: um pre_agendado antigo que vira scheduled DEPOIS de 30 dias tem
+      // createdAt fora da janela, mas updatedAt recente. Aceitar createdAt OU updatedAt impede
+      // que ele desapareça do processamento (o envio ainda respeita a janela de 7d por plataforma).
+      { $or: [{ createdAt: { $gte: windowStart } }, { updatedAt: { $gte: windowStart } }] },
     ],
+    createdAt: { $lte: new Date(now - MIN_AGE_MS) }, // espera 15 min mesmo em confirmação tardia
   })
-    .select('_id patient lead patientInfo.phone createdAt updatedAt history sessionValue isFirstAppointment patientJourneyType')
+    .select('_id patient lead patientInfo.phone createdAt updatedAt history sessionValue isFirstAppointment patientJourneyType operationalStatus insurancePlan liminarContract therapeuticPlan package billingType serviceType metadata.origin.source')
     .sort({ createdAt: -1 })
     .limit(300)
     .lean();
@@ -133,7 +138,8 @@ async function enqueueNew() {
 
       // #2 event_time = data COMPROVADA em que o agendamento virou conversão (transição no
       // histórico p/ status booked); sem evidência, cai para createdAt. Nunca updatedAt genérico.
-      const eventTime = resolveConversionTime(appt);
+      // 19/11: pré-agendamento real converte na criação (createdAt), não na confirmação.
+      const eventTime = resolveConversionTime(appt, { includePreAgendamento });
       const d = decidePlatforms({ first, phone, attr, eventTimeMs: eventTime.getTime() });
       const doc = {
         appointment: appt._id,

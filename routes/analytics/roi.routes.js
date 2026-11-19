@@ -11,7 +11,7 @@ import AdSpend from '../../models/AdSpend.js';
 import Appointment from '../../models/Appointment.js';
 import Patient from '../../models/Patient.js';
 import { normalizeE164BR } from '../../utils/phone.js';
-import { buildChannelFunnel, mergeContacts, summarizeDelivery } from './funnel.logic.js';
+import { buildChannelFunnel, mergeContacts, summarizeDelivery, phoneKey } from './funnel.logic.js';
 import { flexibleAuth } from '../../middleware/amandaAuth.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
@@ -309,7 +309,7 @@ router.get('/funnel-by-channel', flexibleAuth, asyncHandler(async (req, res) => 
     const nameByPhone = {};
     for (const a of apptRows) {
         const pat = a.patient ? patById.get(String(a.patient)) : null;
-        const phone = norm(a.patientInfo?.phone) || (pat ? pat.phone : null);
+        const phone = phoneKey(norm(a.patientInfo?.phone) || (pat ? pat.phone : null));
         if (!phone) continue;
         const nm = a.patientInfo?.fullName || (pat ? pat.name : null);
         if (nm && !nameByPhone[phone]) nameByPhone[phone] = nm;

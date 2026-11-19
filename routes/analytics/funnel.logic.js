@@ -32,7 +32,7 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {}, name
     if (booked) row.agendamentos += 1;
     if (withDetails) {
       const status = booked ? 'agendou' : prePending ? 'pre' : 'contato';
-      row.detalhes.push({ nome: c.name || nm(c.phone) || null, telefone: c.phone, status });
+      row.detalhes.push({ nome: c.name || nm(c.phone) || null, telefone: c.displayPhone || c.phone, status });
     }
     byChannel.set(ch, row);
   }
@@ -65,22 +65,36 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {}, name
   return { rows, totals, semVinculo };
 }
 
-// Contatos recebidos vêm da FONTE que registra contatos (Leads) — INCLUI os sem atribuição.
-// LeadAttribution serve só para IDENTIFICAR o canal, nunca para contar os contatos.
-// Dedup por telefone; canal = atribuição quando houver, senão null (-> "nao_identificado").
-// Mantém o nome do Lead (quando houver) para o detalhe do comercial.
-// A coorte do período é definida por estes contatos (leads que entraram na janela); a
-// conversão acompanha ESTE mesmo grupo.
+// Chave de telefone para casar contato × atribuição × agendamento: o WhatsApp entrega o número
+// sem o 9 após o DDD e o cadastro costuma ter o 9 (ou o contrário). 55DD9XXXXXXXX e 55DDXXXXXXXX
+// viram a mesma chave. Recebe telefone JÁ normalizado (E.164 BR sem "+").
+export function phoneKey(phone) {
+  if (!phone) return null;
+  return String(phone).replace(/^55(\d{2})9(\d{8})$/, '55$1$2');
+}
+
+// Contatos recebidos = Leads da janela + conversas atribuídas (LeadAttribution) da janela.
+// 19/11: antes só Leads contavam e o casamento de canal era por telefone EXATO. As conversas de
+// anúncio do WhatsApp (ctwa) quase nunca têm documento Lead, e quando têm o número vem sem o 9 —
+// o painel mostrava ~1 contato por canal com dezenas de conversas de anúncio no período.
+// Segue a regra do ROI (12/11): conversa real do WhatsApp conta como contato pelo firstMessageAt.
+// Dedup por chave de telefone (phoneKey); canal = atribuição quando houver, senão null.
 export function mergeContacts({ attributed = [], leads = [] } = {}) {
-  const channelByPhone = new Map();
-  for (const a of attributed) { if (a.phone && a.channel) channelByPhone.set(a.phone, a.channel); }
+  const channelByKey = new Map();
+  for (const a of attributed) {
+    const k = phoneKey(a.phone);
+    if (k && a.channel && !channelByKey.has(k)) channelByKey.set(k, a.channel);
+  }
   const seen = new Set();
   const out = [];
-  for (const l of leads) {
-    if (!l.phone || seen.has(l.phone)) continue; // dedup por telefone
-    seen.add(l.phone);
-    out.push({ phone: l.phone, channel: channelByPhone.get(l.phone) || null, name: l.name || null });
-  }
+  const push = (phone, name) => {
+    const k = phoneKey(phone);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push({ phone: k, displayPhone: phone, channel: channelByKey.get(k) || null, name: name || null });
+  };
+  for (const l of leads) push(l.phone, l.name);
+  for (const a of attributed) push(a.phone, null);
   return out;
 }
 

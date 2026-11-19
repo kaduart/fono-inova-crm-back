@@ -221,10 +221,21 @@ export const getAppointmentsByType = async (req, res) => {
         // mode = 'date'      → visão operacional (quando será atendido)
         const dateField = mode === 'date' ? 'date' : 'createdAt';
 
+        // 19/11: createdAt é um instante — o "dia" da clínica é o de Brasília (UTC-3, sem horário de verão).
+        // Antes a janela era 00:00Z–23:59Z: quem pré-agendava das 21h à meia-noite caía no dia seguinte.
+        // O campo `date` (dia do atendimento) continua na janela UTC de sempre.
+        const brtStart = (d) => new Date(`${d}T00:00:00.000-03:00`);
+        const brtEnd = (d) => new Date(`${d}T23:59:59.999-03:00`);
+        const todayBRT = new Date(Date.now() - 3 * 3600e3).toISOString().split('T')[0];
+        const createdStart = brtStart(date || startDate || todayBRT);
+        const createdEnd = brtEnd(date || endDate || todayBRT);
+
         // ─── 1. Definir filtro de período ───
         let dateFilter = {};
 
-        if (date) {
+        if (dateField === 'createdAt') {
+            dateFilter = { createdAt: { $gte: createdStart, $lte: createdEnd } };
+        } else if (date) {
             dateFilter = {
                 [dateField]: {
                     $gte: new Date(date + 'T00:00:00.000Z'),
@@ -315,7 +326,7 @@ export const getAppointmentsByType = async (req, res) => {
                         operationalStatus: { $nin: ['canceled', 'cancelled', 'converted'] }
                     },
                     {
-                        createdAt: { $gte: rangeStart, $lte: rangeEnd },
+                        createdAt: { $gte: createdStart, $lte: createdEnd },
                         operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
                     }
                 ]
