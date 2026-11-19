@@ -39,6 +39,24 @@ export function stopAllCrons() {
     activeCrons.clear();
 }
 
+/**
+ * Parada limpa: igual a stopAllCrons, mas espera quem sabe devolver recursos
+ * (o reaper devolve a posse compartilhada com a KAS, para o próximo dono
+ * assumir na hora em vez de esperar o prazo vencer).
+ */
+export async function stopAllCronsAndRelease() {
+    const entries = Array.from(activeCrons.entries());
+    activeCrons.clear();
+    for (const [name, cron] of entries) {
+        try {
+            if (cron && typeof cron.stopAndRelease === 'function') await cron.stopAndRelease();
+            else if (cron && typeof cron.stop === 'function') cron.stop();
+        } catch (e) {
+            console.error(`[CronManager] Falha ao parar '${name}':`, e.message);
+        }
+    }
+}
+
 export function listActiveCrons() {
     return Array.from(activeCrons.keys());
 }

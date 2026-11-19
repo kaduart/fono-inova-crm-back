@@ -250,3 +250,20 @@ Conclusão: **API (que roda o reaper) antes do worker** é obrigatório, não pr
 O passo `Testes por caso` do CI separa aprovados, falhas antigas e regressões novas, e falha só nas novas. Ele também pega um teste novo falhando dentro de um arquivo que já estava na linha de base por arquivo, coisa que a catraca antiga deixava passar.
 
 **CI verde não significa suíte integralmente aprovada:** as 26 entradas continuam falhando.
+
+## 11. Dono do reaper: Node e KAS (posse compartilhada)
+
+Até aqui, quem garantia "um reaper só" era a variável `EVENT_REAPER_OWNER` e a ordem de reinício. O Node não participava da posse do executor da KAS (`kas_event_reaper_lease`): com o Go já de pé e o Node ainda não reiniciado, os dois recuperavam ao mesmo tempo. As escritas eram condicionais (nenhum evento era gravado duas vezes), mas havia **dois responsáveis agindo juntos**.
+
+Agora o Node usa o **mesmo documento** da KAS (`infrastructure/events/reaperLease.js`, mesmos campos e `$$NOW` do servidor):
+
+| `EVENT_REAPER_SHARED_LEASE` | Comportamento do reaper do Node |
+|---|---|
+| `off` (padrão, igual a produção hoje) | Só **lê** o documento. Se houver posse viva de outro dono (KAS), pula o ciclo e registra `reaper_skipped_foreign_lease`. Não cria coleção, não escreve nada novo |
+| `on` | Disputa a posse (TTL `EVENT_REAPER_LEASE_TTL_MS`, padrão 12 min, igual ao `-lease-ttl` da KAS). Sem posse, pula o ciclo. Com posse, cada recuperação vai numa transação junto com a confirmação da posse (fence): se outro dono tomou a posse, nada é gravado e o ciclo para (`reaper_lease_lost`) |
+
+- Parada limpa (SIGTERM no `server.js` e no `cron-worker`) devolve a posse na hora (`stopAllCronsAndRelease`). Queda sem parada limpa: o próximo dono espera o prazo vencer.
+- `EVENT_REAPER_INTERVAL_MS` e `EVENT_REAPER_WARMUP_MS` (padrão 5 min e 2 min) existem só para o ambiente isolado acelerar os ciclos.
+- Ligar `on` em produção é **decisão de ativação**: cria a coleção `kas_event_reaper_lease` no banco do CRM e passa a usar uma transação por evento recuperado.
+
+Prova: `tests/eventstore/reaperLease.mongo.nodetest.mjs` (`npm run test:reaper-posse-compartilhada`, 7 casos) e o ambiente integrado CRM + KAS (`kas-core/deploy/integrado/run.sh`), que roda Node e Go juntos, faz a reversão Node → Go → Node e confere pelo change stream do banco que toda recuperação foi gravada dentro da posse.
