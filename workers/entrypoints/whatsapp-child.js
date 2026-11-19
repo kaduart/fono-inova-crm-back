@@ -236,7 +236,7 @@ async function main() {
         // 12/11/2026: a busca rápida (searchMessages) derrubou o worker por memória várias vezes seguidas
         // (Unimed). Desativada: a Busca completa incremental faz o mesmo sem esse pico. Job antigo na fila
         // é encerrado aqui sem rodar, para não entrar em loop de reinício.
-        if (!job.data?.deep && !job.data?.activity) {
+        if (!job.data?.deep && !job.data?.activity && !job.data?.adsActivity) {
             await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'failed', finishedAt: new Date(), error: 'Busca rápida desativada (derrubava o WhatsApp). Use a Busca completa.' } });
             console.warn(`[CHILD SCAN] ⏭️ Job ${job.id} — busca rápida desativada, encerrado sem rodar`);
             return { skipped: true };
@@ -245,7 +245,10 @@ async function main() {
         await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'running', startedAt: new Date(), error: null }, $inc: { attempts: 1 } });
         try {
             let stats;
-            if (job.data?.activity) {
+            if (job.data?.adsActivity) {
+                const { runAdsChatActivity } = await import('../../services/adsChatActivity.js');
+                stats = await runAdsChatActivity({ runId, readChatActivity });
+            } else if (job.data?.activity) {
                 const { syncWaitlistChatActivity } = await import('../../services/convenioWaitlistWhatsapp.js');
                 stats = await syncWaitlistChatActivity({ readChatActivity });
             } else if (job.data?.deep) {

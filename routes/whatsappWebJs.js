@@ -92,4 +92,42 @@ router.post('/reconnect', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/whatsapp-web/ads-chat-activity   (admin)
+ * Body: { since?: 'YYYY-MM-DD' } (padrão: 30 dias atrás)
+ * Retomada dos leads de anúncio: enfileira a conferência SÓ LEITURA da última mensagem (clínica × contato)
+ * de cada telefone que veio de anúncio desde `since`. Não envia nada. Resultado em GET .../latest.
+ */
+router.post('/ads-chat-activity', requireAdmin, async (req, res) => {
+  try {
+    const { listAdPhones, startOfDayBRT } = await import('../services/adsChatActivity.js');
+    const since = req.body?.since ? startOfDayBRT(req.body.since) : new Date(Date.now() - 30 * 86400000);
+    if (!since) return sendApiError(res, new AppError('BAD_REQUEST', 'since deve ser YYYY-MM-DD', { status: 400 }), req);
+    const WhatsAppScanRun = (await import('../models/WhatsAppScanRun.js')).default;
+    const pending = await WhatsAppScanRun.findOne({ kind: 'ads_chat_activity', status: { $in: ['queued', 'running'] }, createdAt: { $gte: new Date(Date.now() - 60 * 60000) } }).lean();
+    if (pending) return res.json({ runId: pending._id, status: pending.status, people: pending.phones?.length || 0, reused: true });
+    const phones = await listAdPhones({ since });
+    if (!phones.length) return res.json({ runId: null, status: 'empty', people: 0 });
+    const run = await WhatsAppScanRun.create({ kind: 'ads_chat_activity', convenio: 'ads', phones, since, requestedBy: req.user?._id || req.user?.id || null });
+    const { whatsappScanQueue } = await import('../config/bullConfig.js');
+    await whatsappScanQueue.add('ads-chat-activity', { runId: String(run._id), convenio: 'ads', adsActivity: true }, { jobId: `ads-chat-activity-${run._id}` });
+    res.json({ runId: run._id, status: 'queued', people: phones.length });
+  } catch (err) {
+    sendApiError(res, err, req);
+  }
+});
+
+/** GET /api/whatsapp-web/ads-chat-activity/latest (admin) — status e contagens da última conferência. */
+router.get('/ads-chat-activity/latest', requireAdmin, async (req, res) => {
+  try {
+    const WhatsAppScanRun = (await import('../models/WhatsAppScanRun.js')).default;
+    const run = await WhatsAppScanRun.findOne({ kind: 'ads_chat_activity' }).sort({ createdAt: -1 }).lean();
+    if (!run) return res.json({ run: null });
+    const { rows, ...stats } = run.stats || {};
+    res.json({ run: { id: run._id, status: run.status, since: run.since, people: run.phones?.length || 0, createdAt: run.createdAt, finishedAt: run.finishedAt, error: run.error, stats, rows: rows?.length || 0 } });
+  } catch (err) {
+    sendApiError(res, err, req);
+  }
+});
+
 export default router;
