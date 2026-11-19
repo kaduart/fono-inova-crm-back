@@ -30,7 +30,9 @@ const INVENTORY = {
   // Camada de transporte: é o que os caminhos acima chamam.
   'services/whatsappService.js': { kind: 'transport', reason: 'Cloud API + fallback WhatsApp Web; protegido pelo chamador' },
   // Fora da proteção, de propósito:
-  'controllers/whatsappController.js': { kind: 'human', reason: 'secretária envia pelo chat; clicar de novo é intenção' },
+  // Texto manual (send-text e envio manual pelo lead) usa Idempotency-Key + guarda quando o
+  // front manda a chave; template e mídia manuais seguem sem chave (decisão documentada).
+  'controllers/whatsappController.js': { kind: 'human-guarded', via: 'sendManualOnce', reason: 'texto manual com Idempotency-Key; template/mídia manuais sem chave' },
   'middleware/whatsappGuard.js': { kind: 'internal', reason: 'alerta ao admin; repetição tolerada' },
   'routes/whatsappVPS.js': { kind: 'internal', reason: 'rota administrativa de teste do VPS' },
   'controllers/authController.js': { kind: 'human', reason: 'redefinição de senha pedida pelo usuário; novo link a cada pedido' },
@@ -56,7 +58,7 @@ test('todo arquivo que importa uma função de envio está classificado', () => 
 
 test('caminhos automáticos marcados como protegidos usam o guarda', () => {
   for (const [file, c] of Object.entries(INVENTORY)) {
-    if (c.kind !== 'guarded') continue;
+    if (c.kind !== 'guarded' && c.kind !== 'human-guarded') continue;
     const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
     assert.match(src, new RegExp(`\\b${c.via}\\b`), `${file} deveria usar ${c.via}`);
   }
@@ -71,6 +73,23 @@ test('o helper do WhatsApp Web usa o guarda com chave pelo jobId', () => {
 test('e-mail automático passa pelo provedor com registro por job', () => {
   const src = fs.readFileSync(path.join(ROOT, 'services/communication/delivery/EmailDeliveryProvider.js'), 'utf8');
   assert.match(src, /idempotency/i);
+});
+
+test('e-mail de convênio reserva a chave por jobId no guarda antes do provedor', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'services/communication/delivery/EmailDeliveryProvider.js'), 'utf8');
+  assert.match(src, /guardedSend/);
+  assert.match(src, /email:convenio:\$\{jobId\}/);
+});
+
+test('amanda-resume: chave pela mensagem respondida, nunca pelo relógio', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'controllers/whatsappController.js'), 'utf8');
+  assert.doesNotMatch(src, /amanda-resume:\$\{[^}]*\}:\$\{Date\.now\(\)\}/);
+  assert.match(src, /amanda-resume:\$\{String\(leadId\)\}:\$\{String\(lastInbound\.waMessageId/);
+});
+
+test('envio manual de texto passa pelo guarda nas duas rotas', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'controllers/whatsappController.js'), 'utf8');
+  assert.equal((src.match(/sendManualOnce\(\{/g) || []).length, 2);
 });
 
 test('inventário não aponta para arquivo que não existe mais', () => {

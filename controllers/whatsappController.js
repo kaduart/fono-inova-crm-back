@@ -11,6 +11,7 @@ import * as bookingService from '../services/amandaBookingService.js';
 import Logger from '../services/utils/Logger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
+import { manualIdempotencyKey, sendManualOnce, manualSendResponse } from "../services/communication/manualSendOnce.js";
 
 import { withLeadLock } from '../services/LockManager.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
@@ -94,6 +95,10 @@ export const whatsappController = {
             } = req.body;
             console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
             console.log('✅ [sendText] VERSÃO CORRIGIDA — pausa Amanda ANTES do envio');
+            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            if (keyError) {
+                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+            }
             if (!phone || !text) {
                 return sendApiError(
                   res,
@@ -206,16 +211,24 @@ export const whatsappController = {
                 text: text.substring(0, 50)
             });
 
-            // 📤 Envia usando o service centralizado
-            const result = await sendTextMessage({
-                to,
-                text,
-                lead: resolvedLeadId,
-                contactId: contact?._id || null,
-                patientId,
-                sentBy,
-                userId
+            // 📤 Envia usando o service centralizado (com Idempotency-Key: uma vez por chave)
+            const sendOnce = await sendManualOnce({
+                key: manualKey,
+                actorId: req.user?._id || req.user?.id || userId,
+                destination: to,
+                send: () => sendTextMessage({
+                    to,
+                    text,
+                    lead: resolvedLeadId,
+                    contactId: contact?._id || null,
+                    patientId,
+                    sentBy,
+                    userId
+                })
             });
+            const notSent = manualSendResponse(sendOnce.outcome, sendOnce.providerMessageId);
+            if (notSent) return res.status(notSent.status).json(notSent.body);
+            const result = sendOnce.result;
 
             console.log('✅ Service retornou:', result);
 
@@ -777,6 +790,10 @@ export const whatsappController = {
     async sendManualMessage(req, res) {
         try {
             const { leadId, text, userId, phone } = req.body;
+            const { key: manualKey, error: keyError } = manualIdempotencyKey(req);
+            if (keyError) {
+                return sendApiError(res, new AppError('BAD_REQUEST', keyError, { status: 400 }), req);
+            }
 
             let lead = null;
 
@@ -832,16 +849,24 @@ export const whatsappController = {
             });
             console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
 
-            // 📤 Envia mensagem via service centralizado
-            const result = await sendTextMessage({
-                to: chatPhone,
-                text,
-                lead: lead._id,
-                contactId: contact?._id || null,
-                patientId,
-                sentBy: 'manual',
-                userId
+            // 📤 Envia mensagem via service centralizado (com Idempotency-Key: uma vez por chave)
+            const sendOnce = await sendManualOnce({
+                key: manualKey,
+                actorId: req.user?._id || req.user?.id || userId,
+                destination: chatPhone,
+                send: () => sendTextMessage({
+                    to: chatPhone,
+                    text,
+                    lead: lead._id,
+                    contactId: contact?._id || null,
+                    patientId,
+                    sentBy: 'manual',
+                    userId
+                })
             });
+            const notSent = manualSendResponse(sendOnce.outcome, sendOnce.providerMessageId);
+            if (notSent) return res.status(notSent.status).json(notSent.body);
+            const result = sendOnce.result;
 
             // 🔁 Localiza mensagem persistida pra emitir no socket
             const waMessageId = result?.messages?.[0]?.id || null;
@@ -1025,7 +1050,9 @@ export const whatsappController = {
                 patientId: lead.convertedToPatient ? String(lead.convertedToPatient) : null,
                 sentBy: 'amanda',
                 source: 'amanda-resume',
-                idempotencyKey: `amanda-resume:${String(leadId)}:${Date.now()}`,
+                // Chave pela mensagem que está sendo respondida (não pelo relógio):
+                // dois cliques em "Ativar Amanda" para a mesma pendência viram um envio.
+                idempotencyKey: `amanda-resume:${String(leadId)}:${String(lastInbound.waMessageId || lastInbound._id)}`,
             });
 
             console.log(`✅ [AMANDA-RESUME] Envio enfileirado para WhatsappSendWorker`);

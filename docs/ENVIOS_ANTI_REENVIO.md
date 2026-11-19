@@ -60,17 +60,37 @@ Privacidade no WhatsApp Web: o `messageId` (`true_<telefone>@c.us_<id>`) contém
 
 ## 3. O que já existia e foi mantido
 
-O e-mail de convênio (`EmailDeliveryProvider`, fila `communication-email`) tem três proteções:
+O e-mail de convênio (`EmailDeliveryProvider`, fila `communication-email`) tem agora quatro proteções:
 - log `PENDING` por `jobId`, que bloqueia reenvio com resultado incerto;
-- envio ao Resend com `idempotencyKey = jobId`. O Resend descarta repetições da mesma chave por 24 h, e essa é a única proteção externa real deste inventário;
-- resta uma brecha: a criação do log não é atômica. Dois processos com o mesmo `jobId` ao mesmo tempo, o que só acontece com job travado, poderiam passar. O Resend cobre.
+- **reserva atômica no guarda** (`outbound_deliveries`, chave `email:convenio:<jobId>`) antes de chamar o provedor. Fecha a brecha antiga: a leitura do log no início não era atômica, e dois processos com o mesmo `jobId` ao mesmo tempo enviavam os dois. Teste: contra o código anterior, 3 execuções simultâneas chamavam o provedor 3 vezes e deixavam 3 linhas; agora 1 chamada e 1 linha. A execução que não reservou apaga a linha `PENDING` que tinha criado;
+- timeout/queda de conexão depois de chamar o provedor fica `unknown` e o retry do BullMQ **não** reenvia (antes reenviava: 2 chamadas no teste);
+- envio ao Resend com `idempotencyKey = jobId`. O Resend descarta repetições da mesma chave por 24 h, e essa é a única proteção externa real deste inventário.
+
+Erro de configuração (`RESEND_API_KEY não configurada` e afins) passou a contar como "prova que nada saiu" (`failed`, aceita nova tentativa), porque o cliente do provedor nem chega a ser criado.
+
+### Envio manual pela tela (WhatsApp)
+
+- `POST /whatsapp/send-text` e o envio manual pelo lead aceitam `Idempotency-Key` (8 a 128 caracteres). Com a chave, o envio passa pelo guarda com a chave `wa:manual:<usuário>:<chave>:<hash do número>`; o número não aparece na chave.
+- Respostas: chave já enviada → 200 `duplicated: true` com o `messageId` original, nada reenviado; outra requisição com a mesma chave em voo → 409 `DELIVERY_IN_PROGRESS` (`retryable: true`); resultado desconhecido (timeout, queda) → 409 `DELIVERY_UNCERTAIN` (`retryable: false`), com o texto "confira a conversa no WhatsApp antes de mandar de novo".
+- Front (`messageIdempotency`): a chave nasce na primeira tentativa de mandar aquele texto para aquele número e é reaproveitada no clique duplo e na retentativa depois de erro de rede. Depois de 2xx, o mesmo texto de novo é outra mensagem. Depois de `DELIVERY_UNCERTAIN` a chave é descartada: reenviar é decisão da pessoa, depois de conferir.
+- Sem a chave (cliente antigo), o comportamento é o anterior.
+- Template e mídia manuais (`send-template`, `send-media`) seguem sem chave: decisão registrada, não foram mudados nesta rodada.
+
+### Amanda ao reativar ("Ativar Amanda")
+
+A chave da resposta enfileirada era `amanda-resume:<lead>:<Date.now()>`, diferente a cada clique; dois cliques na mesma pendência podiam gerar duas respostas. Agora é `amanda-resume:<lead>:<id da mensagem recebida que está sendo respondida>`, que cai no guarda `wa:send:` do `WhatsappSendWorker`: uma resposta por mensagem pendente.
+
+### Correção da matriz
+
+A resposta automática da Amanda pela fila (`whatsappAutoReplyWorker`) já usava `amanda-reply:<lead>:<wamid>` e passava pelo guarda `wa:send:` do `WhatsappSendWorker`. A matriz anterior listava esse caminho como aberto; não estava.
 
 Nota: no `notificationOrchestratorWorker`, o e-mail é um **mock**, que só registra em log. Não há envio real de e-mail por esse caminho hoje.
 
 ## 4. Fora do escopo (pendências)
 
-- `controllers/whatsappController.js`: envio manual pela tela. É uma pessoa clicando; duplo clique e reenvio HTTP pedem `Idempotency-Key` no front.
-- Respostas de texto livre da Amanda dentro da conversa (fluxo do `whatsappService`): ainda sem chave estável por resposta. A localização e o aviso ao dono já foram cobertos (seção 2).
+- `controllers/whatsappController.js`: texto manual protegido quando o front manda `Idempotency-Key` (seção 3). Template e mídia manuais seguem sem chave.
+- Respostas de texto livre da Amanda **fora da fila** (chamadas diretas ao `whatsappService` dentro do orquestrador): sem chave estável por resposta. As da fila (`amanda-reply`, `amanda-resume`) estão cobertas.
+- Não há rota de API para resolver um envio `unknown`; a função `resolveUncertainDelivery` existe e é auditada, mas a tela para isso não foi feita.
 - `middleware/whatsappGuard.js` (alerta ao admin) e `routes/whatsappVPS.js` (rota administrativa de teste): internos, repetição tolerada.
 - `controllers/authController.js` (redefinição de senha): cada pedido gera um link novo; repetir é intenção do usuário.
 - Índice `status_createdAt`: criado em produção pelo Kadu em 18/11/2026 (script `criar-indices-protecoes.mjs`, só índices).
@@ -83,5 +103,18 @@ A lista completa e classificada está em `tests/delivery/sendPathsInventory.node
 |---|---|---|
 | `tests/delivery/deliveryGuard.mongo.nodetest.mjs` (`npm run test:envios-anti-reenvio`) | 9 | Envio normal, 10 concorrentes, erro que prova não envio com retry, retries concorrentes, timeout/5xx/desconhecido, queda com lease vivo e vencido, sucesso depois do lease, resolução manual auditada, classificação. Provedor simulado; nenhum envio real |
 | `tests/delivery/whatsappWebDelivery.mongo.nodetest.mjs` (`npm run test:envios-whatsapp-web`) | 6 | Fila `whatsapp-send`: reprocessar não reenvia e devolve o messageId; timeout fica incerto sem retry; desconectado/sem WhatsApp lança e o retry envia; 5 workers simultâneos = 1 envio; jobs diferentes são envios distintos |
-| `tests/delivery/sendPathsInventory.nodetest.mjs` (`npm run test:envios-inventario`) | 6 | Inventário estático: todo arquivo que importa função de envio está classificado; os protegidos usam o guarda |
+| `tests/delivery/manualEmail.mongo.nodetest.mjs` (`npm run test:envios-manual-email`) | 9 | Envio manual: repetição devolve 200 duplicado, 10 concorrentes = 1 envio, timeout incerto sem reenvio, reinício com reserva abandonada vira incerto, desconectado libera retry, chaves/números diferentes e sem chave enviam. E-mail convênio pelo `executeDelivery` real com Resend simulado: 3 execuções simultâneas = 1 envio e 1 linha; timeout incerto sem reenvio |
+| Front `src/services/__tests__/idempotency.whatsapp.test.ts` (vitest) | 4 | Mesma chave na retentativa, clique duplo sai uma vez, nova chave depois de enviada, 409 em andamento mantém e incerto descarta |
+| `tests/delivery/sendPathsInventory.nodetest.mjs` (`npm run test:envios-inventario`) | 9 | Inventário estático: todo arquivo que importa função de envio está classificado; os protegidos usam o guarda |
 | `tests/unit/whatsappSendWorker.deliveryGuard.test.js` (vitest) | 6 | Fiação do worker: chave, `job.id` como fallback, os três resultados sem envio, erro que sobe para retry |
+
+## 6. Limites que dependem do provedor (não prometemos "exatamente uma vez")
+
+| Provedor | O que ele garante | O que sobra para nós |
+|---|---|---|
+| WhatsApp Web (chip, `whatsapp-web.js`) | Nada de idempotência: cada chamada é uma mensagem nova | Janela incerta: se cair depois do `sendMessage` e antes de gravar, fica `unknown` e alguém confere no aparelho |
+| VPS (fallback) | Nada de idempotência conhecido | Igual ao WhatsApp Web |
+| Meta Cloud API (template) | Não deduplica envios repetidos | Templates manuais seguem sem chave |
+| Resend (e-mail convênio) | Descarta a mesma `idempotencyKey` por 24 h | Depois de 24 h, só o guarda local; resultado incerto não reenvia |
+
+Em todos: nossa proteção impede **repetição causada por nós** (retry, reentrega, dois workers, duplo clique, reinício). Não consegue saber o que o provedor fez quando a resposta se perde; nesse caso para e pede conferência humana em vez de arriscar mandar duas vezes.
