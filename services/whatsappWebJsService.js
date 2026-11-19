@@ -612,7 +612,7 @@ function cleanupChromeCacheIfNeeded() {
   }
 }
 
-function createClient() {
+export function createClient() {
   if (localChromeForbidden()) { refuseLocalChrome('createClient'); throw new Error('Chrome local proibido (WHATSAPP_CONNECTOR_MODE=external)'); }
   if (sessionTransferredInfo(authPath)) throw new Error('Chrome local proibido: sessão transferida para o conector');
   installChromeStderrFilter();
