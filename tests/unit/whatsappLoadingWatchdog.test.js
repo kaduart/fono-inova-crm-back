@@ -1,25 +1,75 @@
 /**
  * 19/11/2026: loading_screen depois do ready rearmava o watchdog de 10 min e o child saía (exit 2)
  * a cada 10 min — recarga + catch-up + pico de memória + OOM no Render.
+ * Roda os handlers reais de createClient() com um Client falso e relógio falso:
+ *   1) ready cancela um timer já armado;
+ *   2) loading_screen depois do ready não rearma;
+ *   3) travamento real antes do ready ainda dispara a recuperação (exit 2 em 10 min).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'events';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
-vi.mock('../../models/WhatsAppWebState.js', () => ({ default: { findOneAndUpdate: vi.fn() } }));
-const { shouldArmLoadingWatchdog } = await import('../../services/whatsappWebJsService.js');
+process.env.WHATSAPP_AUTH_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-wd-'));
 
-describe('watchdog do loading_screen', () => {
-  it('antes do ready: arma (travamento real na carga)', () => {
-    expect(shouldArmLoadingWatchdog(false)).toBe(true);
+vi.mock('whatsapp-web.js', async () => {
+  const { EventEmitter: EE } = await import('events');
+  class Client extends EE { constructor(opts) { super(); this.options = opts; } }
+  class LocalAuth { constructor(o) { this.o = o; } }
+  class Poll {}
+  return { default: { Client, LocalAuth, Poll } };
+});
+vi.mock('wwebjs-mongo', () => ({ MongoStore: class {} }));
+vi.mock('../../models/WhatsAppWebState.js', () => ({ default: { findOneAndUpdate: vi.fn(async () => null), findOne: vi.fn(async () => null) } }));
+
+const svc = await import('../../services/whatsappWebJsService.js');
+const TEN_MIN = 10 * 60 * 1000;
+const flush = () => new Promise((r) => setImmediate(r));
+
+let exitSpy;
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+});
+afterEach(() => { vi.useRealTimers(); exitSpy.mockRestore(); });
+
+async function emit(c, ev, ...args) {
+  for (const l of c.listeners(ev)) { await l(...args); }
+  await flush();
+}
+
+describe('watchdog do loading_screen (handlers reais)', () => {
+  it('regra pura: arma só antes do ready', () => {
+    expect(svc.shouldArmLoadingWatchdog(false)).toBe(true);
+    expect(svc.shouldArmLoadingWatchdog(true)).toBe(false);
   });
-  it('depois do ready: não arma (sincronização normal do WhatsApp Web)', () => {
-    expect(shouldArmLoadingWatchdog(true)).toBe(false);
+
+  it('3) travamento real antes do ready: sai em 10 min para respawn', async () => {
+    const c = svc.createClient();
+    await emit(c, 'loading_screen', 30, 'WhatsApp');
+    vi.advanceTimersByTime(TEN_MIN + 1000);
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
-  it('o handler consulta a regra antes de armar o timer', () => {
-    const src = fs.readFileSync(path.resolve(__dirname, '../../services/whatsappWebJsService.js'), 'utf8');
-    const handler = src.slice(src.indexOf("newClient.on('loading_screen'"), src.indexOf("newClient.on('disconnected'"));
-    expect(handler.indexOf('shouldArmLoadingWatchdog(isReady)')).toBeGreaterThan(-1);
-    expect(handler.indexOf('shouldArmLoadingWatchdog(isReady)')).toBeLessThan(handler.indexOf('loadingWatchdog = setTimeout'));
+
+  it('1) ready cancela o timer já armado', async () => {
+    const c = svc.createClient();
+    await emit(c, 'loading_screen', 0, 'WhatsApp');
+    await emit(c, 'ready');
+    vi.advanceTimersByTime(TEN_MIN + 1000);
+    expect(exitSpy).not.toHaveBeenCalledWith(2);
+  });
+
+  it('2) loading_screen depois do ready não rearma (o caso de produção 72/97/99%)', async () => {
+    const c = svc.createClient();
+    await emit(c, 'loading_screen', 0, 'WhatsApp');
+    await emit(c, 'ready');
+    await emit(c, 'loading_screen', 72, 'WhatsApp');
+    await emit(c, 'loading_screen', 97, 'WhatsApp');
+    await emit(c, 'loading_screen', 99, 'WhatsApp');
+    vi.advanceTimersByTime(3 * TEN_MIN);
+    expect(exitSpy).not.toHaveBeenCalledWith(2);
+    expect(svc.whatsappState.ready).toBe(true);
   });
 });
