@@ -73,9 +73,9 @@ export function interpretTiktokResponse(r, { pixel } = {}) {
 //   phone        : telefone principal já resolvido/validado (ou null)
 //   attr         : atribuição capturada (gclid/fbclid/ttclid/...)
 //   createdAtMs  : createdAt do agendamento em ms (janelas de atribuição)
-export function decidePlatforms({ first, phone, attr = {}, eventTimeMs, now = Date.now() }) {
+export function decidePlatforms({ first, phone, attr = {}, eventTimeMs, now = Date.now(), skipReason = null }) {
   if (!first) {
-    const skip = { status: 'skipped', reason: 'nao_e_primeiro_agendamento' };
+    const skip = { status: 'skipped', reason: skipReason || 'nao_e_primeiro_agendamento' };
     return {
       isAcquisition: false,
       done: true,
@@ -179,3 +179,18 @@ export function buildPendingClaim(now = Date.now(), leaseMs = 5 * 60 * 1000) {
     options: { sort: { createdAt: 1 }, new: true },
   };
 }
+
+// 19/11: 1 aquisição por TELEFONE (família). Irmãos agendados pelo mesmo contato geravam 2 Purchases
+// (o índice único é por paciente). Variantes do telefone como AdConversion.phone pode estar gravado:
+// 55DD9XXXXXXXX, 55DDXXXXXXXX (sem o 9) e com '+'.
+export function acquisitionPhoneVariants(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return [];
+  const n = digits.startsWith('55') && digits.length >= 12 ? digits : `55${digits}`;
+  const out = [n];
+  const m = n.match(/^55(\d{2})(9?)(\d{8})$/);
+  if (m) out.push(m[2] ? `55${m[1]}${m[3]}` : `55${m[1]}9${m[3]}`);
+  return [...new Set(out.flatMap((v) => [v, `+${v}`]))];
+}
+
+export const ACQUISITION_SAME_PHONE_REASON = 'aquisicao_mesmo_telefone';
