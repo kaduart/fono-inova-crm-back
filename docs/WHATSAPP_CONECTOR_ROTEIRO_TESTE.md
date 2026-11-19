@@ -54,3 +54,22 @@ Evidência de cada etapa: o print do painel e o trecho do log do conector (`[Eng
 - Sessão da clínica e transferência real (seção 10 do documento principal): só depois de host aprovado e com nova autorização.
 - Produção (Mongo, Redis, Render): nenhuma etapa toca.
 - Varredura profunda de convênio: precisa de histórico de conversas. Dá para testar no número T depois de algumas conversas com a palavra do convênio, como etapa extra opcional.
+
+## 5. Teste de ARM64 (Oracle Ampere A1), sem parear
+
+**Também não executar sem autorização.** Este teste não escaneia QR, não usa número nenhum e não toca na sessão da clínica. Critério para seguir com a Oracle: o conector real sobe, abre o WhatsApp Web até a tela de QR e passa por ciclos de reinício sem deixar processo órfão.
+
+**O que a análise do código já mostrou (19/11):**
+- `whatsapp-web.js` 1.34.7 → `puppeteer` 24.38.0 → `@puppeteer/browsers` 2.13.0 (lockfile do #88). Em Linux ARM64, `@puppeteer/browsers` mapeia `LINUX_ARM` para a pasta `linux64` e baixa o **Chrome x86-64**. O `npm ci` passa, mas esse binário não executa em ARM.
+- Por isso, no ARM é obrigatório: `PUPPETEER_SKIP_DOWNLOAD=true` no `npm ci` e um Chromium ARM64 da distribuição (Debian 12: pacote `chromium`) apontado por `CHROME_PATH`. O conector já lê `CHROME_PATH`/`PUPPETEER_EXECUTABLE_PATH` (`src/index.js`).
+- O resto do lockfile é JavaScript puro (sem binário nativo). Node 20+ tem build oficial ARM64.
+- Risco: a versão do Chromium da distribuição não é a 157 fixada em produção (por causa do SIGTRAP de 09/11). Anotar a versão usada.
+- Não existe imagem Docker do conector. O teste roda direto na VM (ou em uma imagem `node:20-bookworm` com `apt install chromium`).
+
+**Passos (VM ARM64 de teste, sem dados de produção):**
+1. `uname -m` = `aarch64`. Instalar Node 20 e `chromium`. Anotar `chromium --version`.
+2. Em `whatsapp-connector`: `PUPPETEER_SKIP_DOWNLOAD=true npm ci`, depois `npm test` (esperado: 26 passando).
+3. Subir com `CHROME_PATH=/usr/bin/chromium`, segredo de teste, pasta nova de dados e `CRM_EVENTS_URL` apontando para um receptor falso local. Esperado: status `qr` com imagem (o QR **não** é escaneado).
+4. Ciclos: 10 vezes `Ctrl+C` → `npm start`. Depois de cada parada, `pgrep -fa chromium` precisa voltar vazio. Matar o Chrome com `kill -9` 3 vezes: o conector volta a `qr` sozinho e não sobra processo.
+5. Memória: anotar a linha de memória do conector (60 s) e `free -m` no pico. Isso mede só a tela de QR. O consumo com sessão real fica para o roteiro principal.
+6. Encerramento: parar, apagar a pasta de dados e a VM de teste, se ela foi criada só para isso.
