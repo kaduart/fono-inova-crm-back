@@ -390,7 +390,7 @@ O que tem ❌ nas três primeiras colunas depende do código que roda **dentro d
 - `whatsapp-web.js` fixado no **commit** `58ddf15` do GitHub (o mesmo tarball do CRM), não numa faixa de versões.
 - **`whatsapp-connector/package-lock.json` versionado** (lockfileVersion 3): whatsapp-web.js 1.34.7 (commit `58ddf15`), puppeteer 24.38.0, qrcode 1.5.4.
   - Gerado em 18/11 a partir do `package-lock.json` do CRM (mesmas versões e hashes de integridade que já rodam em produção), porque a nuvem bloqueia o tarball do GitHub.
-  - Conferência independente no PC do Kadu (Windows, node 24, npm 11): `npm install` + `npm ci` do zero resolveram as mesmas versões (whatsapp-web.js 1.34.7, puppeteer 24.38.0). Lá, 17 de 26 testes passam; os 9 que falham são do Windows (tar do Git-for-Windows com `C:`, e NTFS sem permissão 0700/0600). O conector é feito para Linux.
+  - Conferência independente no PC do Kadu (Windows, node 24, npm 11): `npm install` + `npm ci` do zero resolveram as mesmas versões (whatsapp-web.js 1.34.7, puppeteer 24.38.0). Lá, 17 de 26 testes passam e **9 falham**. É uma incompatibilidade real com o Windows: o tar do Git-for-Windows não aceita caminho com `C:`, e o NTFS não aplica as permissões 0700/0600 que a proteção da sessão exige. **Limitação documentada: o conector só é suportado em Linux.** No Windows, a importação de sessão e a subida do conector recusam rodar.
   - Instalação limpa no Linux: job `Conector WhatsApp (node:test)` do CI faz `npm ci` pelo lockfile, lista as versões e roda os testes.
 - Usar sempre `npm ci` (nunca `npm install`) no host.
 - Chrome fixado em **157.0.8103.38** (o mesmo de `config/chromeVersion.js`), indicado por `PUPPETEER_EXECUTABLE_PATH` ou `CHROME_PATH`.
