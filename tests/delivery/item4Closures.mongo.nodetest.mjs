@@ -192,3 +192,39 @@ test('incertos: decidir "failed" libera nova tentativa; decidir de novo dá 409;
   const bad = await asAdmin(request(app).post('/api/observability/deliveries/resolve')).send({ key, as: 'talvez' });
   assert.equal(bad.status, 400);
 });
+
+test('incertos: duas decisões concorrentes → exatamente 1 vence (200) e a outra 409; trilha com autor, data e nota', { skip }, async () => {
+  for (let round = 0; round < 5; round++) {
+    const key = `wa:manual:atendente-1:texto:k-conc-${round}:abcdef012345`;
+    const at = new Date();
+    await coll().insertOne({ _id: key, channel: 'whatsapp', destinationHash: 'hc', status: 'unknown', attempts: 1, createdAt: at, history: [{ at, status: 'unknown', reason: 'provider_result_unknown' }] });
+    const [a, b] = await Promise.all([
+      asAdmin(request(app).post('/api/observability/deliveries/resolve')).send({ key, as: 'sent', note: 'admin A: chegou' }),
+      asAdmin(request(app).post('/api/observability/deliveries/resolve')).send({ key, as: 'failed', note: 'admin B: não chegou' })
+    ]);
+    assert.deepEqual([a.status, b.status].sort(), [200, 409], `rodada ${round}: ${a.status}/${b.status}`);
+    const winner = a.status === 200 ? a : b;
+    const loser = a.status === 200 ? b : a;
+    assert.equal(loser.body.code, 'DELIVERY_NOT_UNCERTAIN');
+    const doc = await coll().findOne({ _id: key });
+    assert.equal(doc.status, winner.body.status, 'o estado final é o da decisão vencedora');
+    assert.equal(doc.resolvedBy, ids.admin);
+    assert.ok(doc.resolvedAt instanceof Date);
+    const manual = doc.history.filter((h) => h.reason === 'manual_resolution');
+    assert.equal(manual.length, 1, 'só uma decisão entra na trilha');
+    assert.equal(manual[0].by, ids.admin);
+    assert.equal(manual[0].status, doc.status);
+    assert.match(manual[0].note, /^admin [AB]: /);
+    assert.equal(doc.history[0].reason, 'provider_result_unknown', 'a trilha anterior é preservada');
+  }
+});
+
+test('incertos: secretária não decide nem quando o envio está unknown (estado não muda)', { skip }, async () => {
+  const key = 'wa:manual:atendente-1:texto:k-sec-1:abcdef012345';
+  const at = new Date();
+  await coll().insertOne({ _id: key, channel: 'whatsapp', destinationHash: 'hs', status: 'unknown', attempts: 1, createdAt: at, history: [{ at, status: 'unknown', reason: 'provider_result_unknown' }] });
+  const r = await request(app).post('/api/observability/deliveries/resolve').set('Authorization', `Bearer ${token(ids.secretary, 'secretary')}`).send({ key, as: 'failed' });
+  assert.equal(r.status, 403);
+  const doc = await coll().findOne({ _id: key });
+  assert.equal(doc.status, 'unknown'); assert.equal(doc.history.length, 1); assert.equal(doc.resolvedBy, undefined);
+});

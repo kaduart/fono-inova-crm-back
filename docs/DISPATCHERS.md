@@ -72,3 +72,27 @@ Testes:
 - Ambiente integrado, cenário 7.8: API, workers, `docker stop/start` do Redis e KAS.
 
 Não verificado: se os `Worker` do BullMQ têm o mesmo problema quando o processo de worker sobe com o Redis fora do ar.
+
+## Workers iniciados com o Redis fora do ar (achado do item 7, 19/11)
+
+Mesmo problema de raiz da fila do dispatcher, agora nos **workers** BullMQ: um `Worker`
+criado enquanto a conexão compartilhada (lazyConnect) ainda não conseguiu falar com o Redis
+morre com `Connection is closed.` e **não volta a consumir** quando o Redis volta, nem com
+`worker.run()`. Só um restart do processo resolvia.
+
+- Os workers criados dentro das funções `start*Worker()` já estavam protegidos sem querer:
+  `acquireWorkerLock` faz um `GET` no Redis antes, e esse `GET` espera a reconexão.
+- Quatro workers são criados **na importação** do módulo (`patientWorker`,
+  `packageProjectionWorker`, `packageProcessingWorker`, `communicationEmailWorker`). Como
+  `workers/index.js` importava `registry.js` no topo, eles nasciam antes de qualquer espera.
+  Reprodução: `patient-processing` fica com `isRunning() === false` depois que o Redis volta.
+
+Correção: `workers/index.js` só carrega `registry.js` depois de um `PING` respondido
+(`loadRegistry`). Com o Redis fora, o boot espera (log `workers_waiting_redis` a cada 10s) em
+vez de criar workers condenados. `VALID_GROUPS` passou a ser uma lista fixa em
+`workers/index.js`, conferida contra o registry ao carregar e em teste.
+
+Prova: `npm run test:workers-redis-volta` (boot real por `startWorkersByGroup('billing')` com o
+Redis fora, depois conexão derrubada e 2ª queda; o `TotalsWorker` consome 3 jobs, 1 vez cada).
+Sem a correção o teste falha em `worker patient-processing rodando após a volta`.
+Com os workers já rodando, quedas posteriores se recuperam sozinhas (BullMQ reconecta).

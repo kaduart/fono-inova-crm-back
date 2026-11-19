@@ -36,6 +36,9 @@ function startProxy() {
   });
   return new Promise((r) => proxy.listen(port, '127.0.0.1', r));
 }
+function dropConnections() { for (const s of sockets) s.destroy(); sockets.clear(); }
+function stopProxy() { dropConnections(); return new Promise((r) => proxy.close(() => r())); }
+async function waitReady() { for (let i = 0; i < 80 && redis.status !== 'ready'; i++) await sleep(250); assert.equal(redis.status, 'ready'); }
 
 before(async () => {
   if (skip) return;
@@ -83,4 +86,79 @@ test('Redis fora no 1º uso → failed; Redis volta → o mesmo dispatcher publi
   assert.equal((await Outbox.findOne({ eventId }).lean()).status, 'published');
   const job = await getQueue('payment-processing').getJob(`${eventId}__payment-processing`);
   assert.ok(job, 'job no Redis com jobId eventId__fila');
+});
+
+// Mesma fila, 2ª rodada: o que a correção NÃO pode quebrar.
+//  - eventos pendentes não somem nem são pulados durante a queda;
+//  - reconexões, recuperações repetidas e dois dispatchers ao mesmo tempo não criam job extra.
+test('queda e reconexões: pendentes preservados e nenhuma publicação extra no Redis', { skip, timeout: 90_000 }, async () => {
+  await waitReady();
+  const q = () => getQueue('payment-processing');
+  const mk = async (n) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const eventId = crypto.randomUUID();
+      await Outbox.create({ eventId, correlationId: eventId, eventType: 'PAYMENT_PROCESS_REQUESTED', aggregateType: 'payment',
+        aggregateId: `pay-ficticio-${i}`, payload: { ficticio: true }, status: 'pending', scheduledAt: new Date(0), createdAt: new Date(Date.now() + i) });
+      out.push(eventId);
+    }
+    return out;
+  };
+  const jobsFor = async (ids) => {
+    const jobs = await q().getJobs(['waiting', 'delayed', 'paused', 'prioritized', 'active', 'completed', 'failed'], 0, -1);
+    return jobs.filter((j) => ids.includes(j.data?.eventId));
+  };
+  const totalJobs = async () => Object.values(await q().getJobCounts()).reduce((a, b) => a + b, 0);
+
+  const ids = await mk(6);
+  await stopProxy(); // Redis cai com 6 pendentes
+  for (let i = 0; i < 40 && redis.status === 'ready'; i++) await sleep(100);
+  assert.notEqual(redis.status, 'ready');
+
+  const during = publishPendingEvents(3); // lote de 3 durante a queda
+  await sleep(1500);
+  const mid = await Outbox.find({ eventId: { $in: ids } }).lean();
+  assert.equal(mid.length, 6, 'nenhum evento some');
+  assert.equal(mid.filter((e) => e.status === 'published').length, 0, 'nada é marcado publicado com o Redis fora');
+  const outsideBatch = ids.slice(3);
+  assert.ok(mid.filter((e) => outsideBatch.includes(e.eventId)).every((e) => e.status === 'pending'), 'os fora do lote seguem pending');
+
+  await startProxy(); // volta
+  await waitReady();
+  const r1 = await Promise.race([during, sleep(20_000).then(() => { throw new Error('dispatcher travou depois da volta'); })]);
+  assert.equal(r1.processed, 3);
+
+  // recuperação (o que a KAS faz com failed) até esvaziar, repetida de propósito
+  for (let i = 0; i < 6; i++) {
+    await Outbox.updateMany({ eventId: { $in: ids }, status: 'failed' }, { $set: { status: 'pending', scheduledAt: new Date(0) } });
+    await publishPendingEvents(10);
+  }
+  const done = await Outbox.find({ eventId: { $in: ids } }).lean();
+  assert.ok(done.every((e) => e.status === 'published'), `todos publicados: ${done.map((e) => e.status)}`);
+  let jobs = await jobsFor(ids);
+  assert.equal(jobs.length, 6, 'exatamente 1 job por evento');
+  assert.deepEqual(jobs.map((j) => j.id).sort(), ids.map((id) => `${id}__payment-processing`).sort());
+  const before = await totalJobs();
+
+  // reenvio indevido: tudo volta a pending e DOIS dispatchers rodam juntos
+  await Outbox.updateMany({ eventId: { $in: ids } }, { $set: { status: 'pending', scheduledAt: new Date(0) } });
+  const [a, b] = await Promise.all([publishPendingEvents(10), publishPendingEvents(10)]);
+  assert.equal(a.failed + b.failed, 0);
+  assert.equal(await totalJobs(), before, 'nenhum job novo no Redis');
+  jobs = await jobsFor(ids);
+  assert.equal(jobs.length, 6);
+
+  // reconexão sem desligar (conexão derrubada no meio): novos eventos publicam 1 vez cada
+  const more = await mk(2);
+  dropConnections();
+  await sleep(300);
+  await waitReady();
+  let r3 = await publishPendingEvents(10);
+  if (r3.failed) { // a queda pode pegar a publicação no meio; a recuperação resolve
+    await Outbox.updateMany({ eventId: { $in: more }, status: 'failed' }, { $set: { status: 'pending', scheduledAt: new Date(0) } });
+    r3 = await publishPendingEvents(10);
+  }
+  assert.ok((await Outbox.find({ eventId: { $in: more } }).lean()).every((e) => e.status === 'published'));
+  assert.equal(await totalJobs(), before + 2, 'só os 2 novos entraram');
+  assert.equal((await jobsFor(more)).length, 2);
 });

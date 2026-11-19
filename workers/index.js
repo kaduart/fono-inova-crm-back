@@ -1,8 +1,39 @@
 // workers/index.js
 // 🏗️ Entrypoint unificado — mantido para compatibilidade. Use registry.js para escala.
 
-import { startAllWorkerGroups, startWorkerGroup, VALID_GROUPS } from './registry.js';
+// registry.js NÃO é importado aqui no topo: alguns workers BullMQ são criados na
+// importação do módulo (patientWorker, packageProjectionWorker, packageProcessingWorker,
+// communicationEmailWorker). Um Worker criado com o Redis fora do ar (conexão lazy)
+// morre com "Connection is closed." e NÃO volta a consumir quando o Redis volta, nem
+// com worker.run() (reproduzido no isolado, item 7: tests/isolado/workersRedisVolta).
+// Por isso o registry só é carregado depois que o Redis respondeu (loadRegistry).
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
+
+// Mesma lista de Object.keys(GROUPS) em registry.js (conferido ao carregar e em teste).
+export const VALID_GROUPS = ['outbox', 'scheduling', 'billing', 'clinical', 'whatsapp', 'reconciliation'];
+
+let registryPromise = null;
+async function waitForRedis() {
+    const t0 = Date.now();
+    const warn = setInterval(() => console.warn(JSON.stringify({ msg: 'workers_waiting_redis', waitedMs: Date.now() - t0 })), 10_000);
+    try {
+        await redisConnection.ping(); // com o Redis fora, espera a reconexão (fila offline)
+    } finally {
+        clearInterval(warn);
+    }
+    if (Date.now() - t0 > 1000) console.log(JSON.stringify({ msg: 'workers_redis_ready_after_wait', waitedMs: Date.now() - t0 }));
+}
+export async function loadRegistry() {
+    await waitForRedis();
+    registryPromise ??= import('./registry.js').then((m) => {
+        const real = [...m.VALID_GROUPS].sort().join(',');
+        if (real !== [...VALID_GROUPS].sort().join(',')) {
+            throw new Error(`VALID_GROUPS desatualizado em workers/index.js: registry tem ${real}`);
+        }
+        return m;
+    });
+    return registryPromise;
+}
 
 const WORKERS_STANDALONE_KEY = 'workers:standalone:active';
 const WORKERS_EMBEDDED_KEY = 'workers:embedded:active';
@@ -53,6 +84,7 @@ async function releaseWorkerLock(mode) {
 export async function startAllWorkers() {
     await acquireWorkerLock('embedded');
     console.log('[Workers] Iniciando todos os workers (modo monolítico)…\n');
+    const { startAllWorkerGroups } = await loadRegistry();
     await startAllWorkerGroups(workers);
     global.workersAtivos = true;
     console.log('\n[Workers] Todos os workers iniciados!\n');
@@ -62,13 +94,13 @@ export async function startAllWorkers() {
 export async function startWorkersByGroup(groupName) {
     await acquireWorkerLock('embedded');
     console.log(`[Workers] Iniciando grupo: ${groupName}\n`);
+    const { startWorkerGroup } = await loadRegistry();
     await startWorkerGroup(groupName, workers);
     global.workersAtivos = true;
     console.log(`\n[Workers] Grupo ${groupName} iniciado!\n`);
     return workers;
 }
 
-export { VALID_GROUPS };
 
 export function stopAllWorkers() {
     console.log('[Workers] Parando workers...');
