@@ -1,7 +1,7 @@
 // tests/funnel.logic.test.mjs — validação PURA (sem DB) do funil e da entrega.
 // Rodar: node tests/funnel.logic.test.mjs
 import assert from 'node:assert/strict';
-import { buildChannelFunnel, mergeContacts, summarizeDelivery } from '../routes/analytics/funnel.logic.js';
+import { buildChannelFunnel, mergeContacts, summarizeDelivery, phoneKey } from '../routes/analytics/funnel.logic.js';
 
 let pass = 0, fail = 0;
 const t = (n, f) => { try { f(); pass++; console.log('  ✓', n); } catch (e) { fail++; console.log('  ✗', n, '\n      ', e.message); } };
@@ -64,16 +64,36 @@ t('agendamento SEM Lead vinculado aparece em semVinculo, NÃO na conversão', ()
   assert.equal(totals.contatos, 5);
 });
 
-console.log('\n#mergeContacts — contatos vêm dos LEADS; atribuição só dá o canal');
-t('base = leads (inclui sem atribuição); atribuição enriquece o canal; dedup por telefone', () => {
+console.log('\n#mergeContacts — contatos = leads + conversas atribuídas (19/11); dedup por telefone com/sem 9');
+t('leads + atribuídos; atribuição dá o canal; dedup', () => {
   const merged = mergeContacts({
-    attributed: [{ phone: '55A', channel: 'meta_ads' }, { phone: '55C', channel: 'tiktok_ads' }],
-    leads: [{ phone: '55A' }, { phone: '55B' }, { phone: '55A' }],
+    attributed: [{ phone: '556299990001', channel: 'meta_ads' }, { phone: '556299990003', channel: 'tiktok_ads' }],
+    leads: [{ phone: '556299990001' }, { phone: '556299990002' }, { phone: '556299990001' }],
   });
-  assert.equal(merged.length, 2); // 55A (dedup) + 55B; 55C NÃO entra (não é lead)
-  assert.equal(merged.find((m) => m.phone === '55A').channel, 'meta_ads');
-  assert.equal(merged.find((m) => m.phone === '55B').channel, null); // -> nao_identificado
-  assert.equal(merged.find((m) => m.phone === '55C'), undefined); // atribuído-only não conta como contato
+  assert.equal(merged.length, 3); // 0001 (dedup) + 0002 (lead sem canal) + 0003 (conversa atribuída sem Lead)
+  assert.equal(merged.find((m) => m.phone === '556299990001').channel, 'meta_ads');
+  assert.equal(merged.find((m) => m.phone === '556299990002').channel, null); // -> nao_identificado
+  assert.equal(merged.find((m) => m.phone === '556299990003').channel, 'tiktok_ads'); // conversa de anúncio sem Lead conta
+});
+t('WhatsApp sem o 9 casa com cadastro com o 9 (mesmo contato, canal preservado)', () => {
+  const merged = mergeContacts({
+    attributed: [{ phone: '556299990001', channel: 'instagram_ads' }], // como o WhatsApp entrega
+    leads: [{ phone: '5562999990001', name: 'X' }],                    // como o cadastro guarda
+  });
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].channel, 'instagram_ads');
+  assert.equal(merged[0].displayPhone, '5562999990001');
+});
+t('phoneKey: com e sem 9 viram a mesma chave; fixo/inválido passa intacto', () => {
+  assert.equal(phoneKey('5562999990001'), phoneKey('556299990001'));
+  assert.equal(phoneKey('556233334444'), '556233334444');
+  assert.equal(phoneKey(null), null);
+});
+t('agendamento casa com a conversa pela chave (pré pendente aparece no canal)', () => {
+  const contacts = mergeContacts({ attributed: [{ phone: '556299990001', channel: 'meta_ads' }], leads: [] });
+  const { rows } = buildChannelFunnel({ contacts, apptStatusByPhone: { [phoneKey('5562999990001')]: { pre: true } } });
+  assert.equal(rows[0].channel, 'meta_ads');
+  assert.equal(rows[0].preAgendamentos, 1);
 });
 
 console.log('\n#Entrega — ACEITA COMPROVADA (resposta API) vs ENVIADO HISTÓRICO (sem prova)');
