@@ -87,6 +87,86 @@ export function waitingSince({ createdAt, lastMessage, lastInteraction }) {
   return createdAt ? new Date(createdAt) : null;
 }
 
+// ─── Fila "Lead sem resposta" (espera por resposta HUMANA) ───────────────────────────
+// Ver docs/COMMERCIAL_QUEUES.md, seção "Lead sem resposta".
+// Só conta como resposta da equipe: (a) mensagem manual que o provedor do WhatsApp ACEITOU
+// (Message outbound, sentBy 'manual', status sent/delivered/read) ou (b) a marcação
+// "Marcar como respondido" feita para o encaminhamento atual. Resposta da Amanda não conta.
+export const HUMAN_REPLY_STATUSES = ['sent', 'delivered', 'read'];
+// O encaminhamento da Amanda grava takenOverAt no mesmo instante; acima disso, alguém pausou depois.
+export const HANDOFF_ASSIGN_TOLERANCE_MS = 5_000;
+
+const toDate = v => (v ? new Date(v) : null);
+const validDate = d => d && !Number.isNaN(d.getTime());
+const maxDate = (...ds) => ds.filter(validDate).reduce((a, b) => (!a || b > a ? b : a), null);
+
+// Encaminhamento atual da Amanda: só vale enquanto o lead está em HANDOFF
+// (o "Retomar Amanda" volta o estado para GREETING e encerra o encaminhamento).
+export function currentHandoffAt(lead) {
+  if (lead?.currentState !== 'HANDOFF') return null;
+  const at = toDate(lead?.amandaAgent?.handoff?.at);
+  return validDate(at) ? at : null;
+}
+
+// Quem está com o lead: atendente identificado, ninguém assumiu, ou responsável não identificado
+// (pausa feita sem usuário, como a do token da Agenda Externa).
+export function leadAssignee(lead) {
+  const mc = lead?.manualControl || {};
+  if (mc.takenOverBy) return { kind: 'atendente', id: String(mc.takenOverBy) };
+  const handoffAt = currentHandoffAt(lead);
+  const takenAt = toDate(mc.takenOverAt);
+  if (handoffAt) {
+    if (!validDate(takenAt) || Math.abs(takenAt - handoffAt) <= HANDOFF_ASSIGN_TOLERANCE_MS) return { kind: 'ninguem' };
+    return { kind: 'nao_identificado' };
+  }
+  return mc.active ? { kind: 'nao_identificado' } : { kind: 'ninguem' };
+}
+
+// Situação do lead na fila. Entradas:
+//  lead            : currentState, manualControl, amandaAgent.handoff, autoReplyEnabled
+//  lastInboundAt   : última mensagem recebida do lead
+//  lastHumanReplyAt: última mensagem manual aceita pelo provedor (HUMAN_REPLY_STATUSES)
+//  lastReplyMark   : última marcação { at, handoffAt } de "Marcar como respondido"
+// Saída: { state: 'esperando' | 'com_amanda' | 'respondido' | null, since, reason, handoffAt, closedBy }
+export function humanWait({ lead, lastInboundAt = null, lastHumanReplyAt = null, lastReplyMark = null }) {
+  const handoffAt = currentHandoffAt(lead);
+  const inbound = toDate(lastInboundAt);
+  const amandaActive = !lead?.manualControl?.active && lead?.autoReplyEnabled !== false;
+
+  // Amanda ainda conversa e não encaminhou: fica fora da fila, só na contagem separada
+  if (!handoffAt && amandaActive) {
+    return { state: validDate(inbound) ? 'com_amanda' : null, since: null, reason: null, handoffAt: null, closedBy: null };
+  }
+
+  const reply = toDate(lastHumanReplyAt);
+  const markAt = toDate(lastReplyMark?.at);
+  const markHandoff = toDate(lastReplyMark?.handoffAt);
+  // A marcação só encerra o encaminhamento para o qual foi feita
+  const markValid = validDate(markAt) && (handoffAt
+    ? validDate(markHandoff) && markHandoff.getTime() === handoffAt.getTime()
+    : true);
+  const closer = maxDate(reply, markValid ? markAt : null);
+  const closedBy = !closer ? null : (markValid && markAt && closer.getTime() === markAt.getTime() ? 'marcacao' : 'mensagem');
+
+  if (handoffAt && (!closer || closer < handoffAt)) {
+    return { state: 'esperando', since: handoffAt, reason: 'handoff', handoffAt, closedBy: null };
+  }
+  if (validDate(inbound) && (!closer || inbound > closer)) {
+    return { state: 'esperando', since: inbound, reason: 'nova_mensagem', handoffAt, closedBy: null };
+  }
+  if (!closer) return { state: null, since: null, reason: null, handoffAt, closedBy: null };
+  return { state: 'respondido', since: null, reason: null, handoffAt, closedBy };
+}
+
+// Referência da espera que a atendente viu na tela: muda quando há novo encaminhamento
+// ou nova mensagem do lead. "Marcar como respondido" envia essa referência e o servidor
+// só grava se ela ainda for a espera aberta (senão, a tela atualiza e a nova pendência fica).
+export function waitKeyOf(w) {
+  if (!w || w.state !== 'esperando' || !w.since) return null;
+  const h = w.handoffAt ? new Date(w.handoffAt).toISOString() : '-';
+  return `${w.reason}|${h}|${new Date(w.since).toISOString()}`;
+}
+
 // Prioridade do lead para encaixe: lista de espera e quente primeiro, depois o mais recente
 const LEAD_PRIORITY = { lista_espera: 0, lead_quente: 1, engajado: 2, atendimento: 2, em_andamento: 2 };
 export function sortFitLeads(leads) {
