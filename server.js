@@ -140,6 +140,7 @@ import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import revenueAnalyticsRoutes from './routes/analytics.js';
 import operationalAnalyticsRoutes from './routes/analytics/operational.routes.js';
 import roiAnalyticsRoutes from './routes/analytics/roi.routes.js';
+import attributionAnalyticsRoutes from './routes/analytics/attribution.routes.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
@@ -578,6 +579,8 @@ app.use('/api/analytics/financial', financialAnalyticsRoutes);
 app.use('/api/analytics/revenue', revenueAnalyticsRoutes);
 app.use('/api/v2/analytics/operational', operationalAnalyticsRoutes);
 app.use('/api/v2/analytics/roi', roiAnalyticsRoutes);
+// Frente 2 — receita recebida por campanha + saúde da integração (somente leitura)
+app.use('/api/v2/analytics', attributionAnalyticsRoutes);
 // 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
 app.use('/api/insurance-guides', (req, res) => {
   console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/insurance-guides`);
