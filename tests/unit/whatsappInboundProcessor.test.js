@@ -4,7 +4,11 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const calls = vi.hoisted(() => ({ capture: [], confirm: [], interest: [], activity: [], vote: [] }));
+const calls = vi.hoisted(() => ({ capture: [], confirm: [], interest: [], activity: [], vote: [], mirror: [], scheduled: [] }));
+vi.mock('../../services/whatsappWebChatMirror.js', () => ({
+  mirrorWebMessage: async (ev) => { calls.mirror.push(ev); return { status: 'off' }; },
+  scheduleOutboundMirror: (ev) => { calls.scheduled.push(ev); return false; },
+}));
 vi.mock('../../services/leadAttributionService.js', () => ({ captureInboundAttribution: async (a) => { calls.capture.push(a); return { ok: true }; } }));
 vi.mock('../../services/appointment/attendanceConfirmation.service.js', () => ({
   recordAttendanceConfirmationResponse: async (a) => { calls.confirm.push(a); return { matched: false }; },
@@ -47,6 +51,23 @@ describe('message.inbound', () => {
     expect(calls.capture[0].capturedBy).toBe('whatsapp_web_catchup');
     expect(calls.confirm).toHaveLength(0);
     expect(calls.interest).toHaveLength(0);
+  });
+});
+
+describe('tela Conversas (ponte do WhatsApp Web)', () => {
+  it('recebida, ao vivo e no catch-up, passa pela ponte com direção inbound', async () => {
+    await processConnectorEvent({ type: 'message.inbound', data: { ...base, body: 'oi', type: 'chat' } });
+    await processConnectorEvent({ type: 'message.inbound', data: { ...base, source: 'catchup', body: 'oi de novo' } });
+    expect(calls.mirror.map((e) => [e.direction, e.body])).toEqual([['inbound', 'oi'], ['inbound', 'oi de novo']]);
+  });
+  it('enviada pela clínica agenda a cópia e continua gravando a data da conversa', async () => {
+    await processConnectorEvent({ type: 'message.outbound', data: { waMessageId: 'x', phone: base.phone, timestamp: 1_763_500_000, body: 'resposta', type: 'chat' } });
+    expect(calls.scheduled[0]).toMatchObject({ waMessageId: 'x', body: 'resposta' });
+    expect(calls.activity).toHaveLength(1);
+  });
+  it('recebida sem telefone (@lid) não chama a ponte', async () => {
+    await processConnectorEvent({ type: 'message.inbound', data: { ...base, phone: null, body: 'oi' } });
+    expect(calls.mirror).toHaveLength(0);
   });
 });
 
