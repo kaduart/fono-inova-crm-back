@@ -433,6 +433,15 @@ const ATTR_FIELDS = '_id phone source method campaign adId gclid fbclid ttclid c
  * AdConversion (só pelo Patient.phone). Ver Limitações em docs/RECEITA_POR_CAMPANHA.md.
  */
 export async function loadRevenueAttribution({ since, until, models } = {}) {
+  return attributeReceivedRevenue(await loadRevenueInputs({ since, until, models }));
+}
+
+/**
+ * Só a leitura (mesmas consultas, mesmos índices): devolve as entradas cruas que
+ * attributeReceivedRevenue recebe. Usada também pelo exportador para o KAS Attribution
+ * (services/attribution/kasExport.js), para os dois lados partirem dos MESMOS dados.
+ */
+export async function loadRevenueInputs({ since, until, models } = {}) {
   const M = models || await defaultModels();
   const range = {};
   if (since) range.$gte = since;
@@ -462,7 +471,7 @@ export async function loadRevenueAttribution({ since, until, models } = {}) {
 
   const patientIds = [...new Set([...ledgerEntries, ...referenceEntries].map((e) => id(e.patient)).filter(Boolean))];
   if (!patientIds.length) {
-    return attributeReceivedRevenue({ ledgerEntries, referenceEntries });
+    return { ledgerEntries, referenceEntries, adConversions: [], leadAttributions: [], patients: [] };
   }
 
   const [ledgerPatients, adConversions] = await Promise.all([
@@ -486,5 +495,5 @@ export async function loadRevenueAttribution({ since, until, models } = {}) {
     const k = id(p._id); if (seenPatients.has(k)) return false; seenPatients.add(k); return true;
   });
 
-  return attributeReceivedRevenue({ ledgerEntries, referenceEntries, adConversions, leadAttributions, patients });
+  return { ledgerEntries, referenceEntries, adConversions, leadAttributions, patients };
 }

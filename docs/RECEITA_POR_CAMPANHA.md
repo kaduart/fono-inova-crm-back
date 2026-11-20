@@ -183,3 +183,18 @@ dígitos (`normalizeE164BR` + chave sem o 9) antes de comparar.
   mas cujo agendamento usou o telefone da mãe, não é visto como compartilhamento.
 - A data do contato é a melhor prova que o CRM grava (`eventTime` do agendamento ou `firstMessageAt` da conversa).
   Um contato real anterior que não foi registrado não conta.
+
+## Exportar para o KAS Attribution
+
+O mesmo dado da receita por campanha pode ser enviado ao KAS Attribution (kas-core, contrato `contract/v1/attribution.md`), que é o módulo genérico vendido para outras empresas. O exportador parte das MESMAS consultas (`loadRevenueInputs`) e só lê:
+
+```
+node scripts/exportar-kas-attribution.mjs --amostra --saida ./kas-export
+node scripts/exportar-kas-attribution.mjs --uri-env CONSULTA_URI --desde 2026-11-01 --ate 2026-11-30 --saida ./kas-export
+```
+
+Gera `customers.csv`, `contacts.csv`, `receipts.csv` e `refunds.csv`. O envio é outro passo, com `kas-attribution-import` do kas-core. Os arquivos têm telefone de paciente (só dígitos): `kas-export/` está no `.gitignore`, apague depois do envio. No KAS o telefone vira impressão digital e não é guardado.
+
+Conciliação: a amostra fictícia exportada é a mesma de `kas-core/testdata/attribution/exportado-crm`, e o KAS chega aos mesmos R$ 1.290 = 480 + 570 + 240 (`TestCRMExportMatchesCRM`). Para comparar com dados reais, peça o relatório do KAS com `from`/`to` iguais a `--desde`/`--ate`.
+
+Limitação: o KAS liga clientes da mesma família pelo telefone do cadastro. O CRM também considera o telefone da AdConversion quando é diferente do cadastro; esse caso raro não vai no arquivo.

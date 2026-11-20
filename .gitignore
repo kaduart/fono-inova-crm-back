@@ -146,3 +146,6 @@ arquivos-js.txt
 
 # Export de contatos (PII) — nunca versionar
 meta-clientes-*.csv
+
+# Exportação para o KAS Attribution: tem telefone de paciente, nunca versionar
+/kas-export/
