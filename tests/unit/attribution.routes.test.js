@@ -13,7 +13,7 @@ import { createAttributionRouter, parsePeriod } from '../../routes/analytics/att
 import { buildAttributionHealth } from '../../services/attribution/attributionHealth.js';
 import { amostra, ESPERADO, P } from '../../services/attribution/fixtures/receitaFicticia.js';
 
-// ── Model falso: filtro mínimo (igualdade, $in, $gte, $lte, $ne, $type objectId, $or, caminho com ponto) ──
+// ── Model falso: filtro mínimo (igualdade, $in, $gte, $lte, $lt, $ne, $type objectId, $or, caminho com ponto) ──
 const get = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
 const eq = (a, b) => (a instanceof Date || b instanceof Date ? +new Date(a) === +new Date(b) : String(a) === String(b));
 function matches(doc, filter) {
@@ -25,6 +25,7 @@ function matches(doc, filter) {
         if (op === '$in') return v != null && arg.some((a) => eq(a, v));
         if (op === '$gte') return v != null && +new Date(v) >= +new Date(arg);
         if (op === '$lte') return v != null && +new Date(v) <= +new Date(arg);
+        if (op === '$lt') return v != null && +new Date(v) < +new Date(arg);
         if (op === '$ne') return v == null ? arg != null : !eq(v, arg);
         if (op === '$type' && arg === 'objectId') return v != null && /^[0-9a-f]{24}$/.test(String(v));
         throw new Error(`operador não suportado no model falso: ${op}`);

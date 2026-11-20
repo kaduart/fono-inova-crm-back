@@ -40,7 +40,10 @@ describe('estornos pelo saldo (Mongo descartável)', () => {
   it('carrega o estorno anterior ao período como referência', async () => {
     const raw = await loadRevenueInputs(NOV);
     const refs = raw.referenceEntries.map((e) => String(e._id)).sort();
-    expect(refs).toEqual(amostraEstornos.referenceEntries.map((e) => e._id).sort());
+    // os créditos dos pagamentos estornados vêm todos (no período ou não; o núcleo deduplica)
+    expect(refs).toEqual(expect.arrayContaining(amostraEstornos.referenceEntries.map((e) => e._id)));
+    // o estorno anterior ao período vem como referência e não entra nos lançamentos do período
+    expect(raw.ledgerEntries.map((e) => String(e._id))).not.toContain(amostraEstornos.referenceEntries[2]._id);
   });
 
   it('novembro fecha por campanha: 100, 500, −100 e sem vínculo −50', async () => {
