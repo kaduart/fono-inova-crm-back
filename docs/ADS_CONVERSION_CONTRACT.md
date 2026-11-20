@@ -38,6 +38,10 @@ leadAttribution (por telefone)┘                                              �
    plano terapêutico e sessão de pacote (`isSystemProjection` em `adsConversion.logic.js`).
    Desligar sem deploy: `ADS_CONVERSION_PRE_AGENDADO=false`. Pré-agendamento cancelado/expirado depois
    de enviado não é estornado (a Meta não tem estorno; no Google dá para ajustar pela ação de conversão).
+   **Feed `google-offline.csv` (correção 4, padrão ligado):** agendamento que já estava cancelado ANTES da
+   primeira entrega da linha no arquivo não sai; o que já saiu continua. "Avaliação agendada" mede
+   agendamento válido na 1ª entrega; comparecimento é a ação separada "Avaliação realizada" (§4.1).
+   Voltar à regra antiga sem deploy de código: `ADS_FEED_SKIP_CANCELED=off`.
 2. `refreshUnknownSources()` — reatribui docs `source=unknown` quando a origem chega depois; reabre o envio
    da plataforma cujo clickId surgiu (Google 90d / TikTok 7d).
 3. `processPending()` — envia pendentes com retry/backoff (20m, 40m, 80m, 160m; máx 5 tentativas).
