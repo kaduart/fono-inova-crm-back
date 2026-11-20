@@ -52,8 +52,8 @@ A resposta não traz nome nem telefone de paciente: só contagens.
 
 Motivos possíveis em `semVinculo.motivos`: `sem_origem_capturada` (ou outro `unknownReason` da AdConversion),
 `sem_telefone`, `sem_aquisicao_e_sem_origem_no_telefone`, `lancamento_sem_paciente`,
-`contato_da_campanha_depois_do_recebimento`, `origem_sem_data_de_contato`, `recebimento_sem_data` e
-`estorno_sem_recebimento_original`.
+`contato_da_campanha_depois_do_recebimento`, `origem_sem_data_de_contato`, `recebimento_sem_data`,
+`estorno_sem_recebimento_original`, `estorno_antes_do_recebimento` e `estorno_acima_do_saldo`.
 
 ### `GET /api/v2/analytics/attribution-health?from=&to=`
 
@@ -110,17 +110,24 @@ basta trocar a lista de `ADMIN_ONLY` em `routes/analytics/attribution.routes.js`
      em novembro e pagou de novo → só o pagamento de novembro vai para a campanha; o de outubro vai para uma
      origem anterior, se houver, ou para "sem vínculo" com `contato_da_campanha_depois_do_recebimento`.
    - Candidata sem data de contato não prova nada (`origem_sem_data_de_contato`).
-7. **Estorno/reversão desfaz o recebimento original (regra `estorno-v2-rateio-por-recebimento`).**
-   - Com `reversalOfEntryId`: vai inteiro para aquele recebimento (precisão vence rateio).
-   - Só com `payment`: vale para os recebimentos (créditos de caixa) daquele pagamento **até a data do
-     estorno** (o loader busca todos, no período ou não). Se todos têm a mesma origem e nível, o estorno vai
-     inteiro para ela. Se divergem (ex.: parcela de outubro antes da campanha e parcela de novembro depois),
-     o estorno é **rateado na proporção do valor de cada recebimento**, em centavos, com a sobra no mais
-     antigo. Exemplo: parcelas de 100 e 300, estorno de 200 → 50 no "sem vínculo" e 150 na campanha.
-   - Parcela recebida depois do estorno não absorve o estorno.
-   - Estornos parciais somam: 300 recebidos, estornos de 100 e 50 → líquido 150 na mesma campanha.
+7. **Estorno/reversão desfaz o saldo do recebimento original (regra `estorno-v3-saldo-por-recebimento`,
+   a mesma da KAS; revisão do analista em 20/11).**
+   - Cada recebimento tem um **saldo**: valor menos os estornos anteriores a ele. Todo estorno é aplicado em
+     ordem de data, **inclusive os anteriores ao período consultado** (o loader os traz como referência,
+     sem somar), porque eles já reduziram quanto ainda pode ser estornado daquela parcela.
+   - Com `reversalOfEntryId`: vai para aquele recebimento, até o saldo dele (precisão vence rateio).
+   - Só com `payment`: vale para os recebimentos daquele pagamento **até a data do estorno** que ainda têm
+     saldo (o loader busca todos, no período ou não). Se todos têm a mesma origem e nível, vai inteiro para
+     ela; se divergem, é **rateado na proporção do saldo**, em centavos, com a sobra no mais antigo que ainda
+     comporta. Exemplo: parcelas de 100 (sem campanha) e 300 (campanha) do mesmo pagamento; estorno exato dos
+     100 e depois estorno geral de 200 → sem vínculo 100 − 100 = 0 e campanha 300 − 200 = 100.
+   - **Estorno anterior a todo recebimento do pagamento não herda campanha futura:** o valor fica no total,
+     em "sem vínculo", com `estorno_antes_do_recebimento`.
+   - O que passa do saldo fica em "sem vínculo" com `estorno_acima_do_saldo` (o total continua fechando).
    - O débito usa a campanha e o nível **do recebimento, na data dele**, nunca a origem atual do paciente.
    - Sem recebimento original encontrado: "sem vínculo" com `estorno_sem_recebimento_original`.
+   - Amostra fictícia dos três casos: `services/attribution/fixtures/estornosFicticios.js`
+     (450 = gg-caso-1 100 + gg-caso-2 500 + gg-caso-3 −100 + sem vínculo −50).
 8. **Nível de evidência:**
    - `comprovada`: click id (`gclid`/`fbc`/`ttclid`/`ctwaClid`) ou método `ctwa`/`site_signature`/`token`, num telefone de **um só** paciente;
    - `provavel`: sinal forte num telefone usado por mais de um paciente, ou só palavra-chave, manual, lead ou método desconhecido;

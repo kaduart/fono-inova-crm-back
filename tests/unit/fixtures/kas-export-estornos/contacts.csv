@@ -1,0 +1,4 @@
+external_id,customer_ref,source,contacted_at,campaign,ad_id,gclid,fbclid,ttclid,ctwa_clid,method,acquisition
+adconv-00000000000000000000e041,00000000000000000000e001,google_ads,2026-11-10T13:00:00.000Z,gg-caso-1,,GCLID-FICTICIO-CASO-1,,,,site_signature,true
+adconv-00000000000000000000e042,00000000000000000000e002,google_ads,2026-10-01T13:00:00.000Z,gg-caso-2,,GCLID-FICTICIO-CASO-2,,,,site_signature,true
+adconv-00000000000000000000e043,00000000000000000000e003,google_ads,2026-10-15T13:00:00.000Z,gg-caso-3,,GCLID-FICTICIO-CASO-3,,,,site_signature,true

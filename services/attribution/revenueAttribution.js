@@ -91,7 +91,7 @@ export const TOUCH_RULE_VERSION = 'touch-v2-precedencia';
 // (último contato, linear) entram como novas versões, sem mudar o resultado desta.
 export const ATTRIBUTION_MODEL = 'primeiro-contato-por-recebimento-v1';
 export const SUPPORTED_MODELS = Object.freeze([ATTRIBUTION_MODEL]);
-export const REFUND_RULE_VERSION = 'estorno-v2-rateio-por-recebimento';
+export const REFUND_RULE_VERSION = 'estorno-v3-saldo-por-recebimento';
 export function sameTouch(acq = {}, a = {}) {
   if (!acq.source || acq.source !== a.source) return false;
   const fbclidOf = (fbc) => (fbc ? String(fbc).split('.').pop() : null);
@@ -127,8 +127,9 @@ const minMs = (...vals) => {
  *
  * @param {object} input
  * @param {Array} input.ledgerEntries      lançamentos do período (lean): _id type direction amount patient payment reversalOfEntryId occurredAt
- * @param {Array} [input.referenceEntries] lançamentos FORA do período só para achar o recebimento original de uma
- *                                         reversão/estorno (paciente e data; não entram na soma)
+ * @param {Array} [input.referenceEntries] lançamentos FORA do período que não entram na soma: o recebimento
+ *                                         original de um estorno (paciente, data, valor) e os estornos anteriores
+ *                                         ao período dos mesmos recebimentos/pagamentos (consomem saldo)
  * @param {Array} [input.adConversions]    AdConversion (lean) de aquisição dos pacientes (com eventTime)
  * @param {Array} [input.leadAttributions] LeadAttribution (lean) dos telefones envolvidos (com firstMessageAt)
  * @param {Array} [input.patients]         [{ _id, phone }] — pacientes do ledger E quem divide telefone com eles
@@ -226,36 +227,88 @@ export function attributeReceivedRevenue({
   }
 
   // ── 3. Recebimento(s) original(is) de cada estorno/reversão ──────────────────
-  // reversalOfEntryId aponta o recebimento exato. Sem ele, o estorno é do PAGAMENTO: vale
-  // para os recebimentos (créditos de caixa) daquele pagamento até a data do estorno. Se
-  // todos têm a mesma origem e nível, o estorno vai inteiro para ela; se divergem (ex.:
-  // parcela antes e parcela depois da campanha), é rateado na proporção do valor de cada
-  // recebimento, em centavos, com a sobra no recebimento mais antigo (REFUND_RULE_VERSION).
+  // Regra estorno-v3-saldo-por-recebimento (REFUND_RULE_VERSION), a mesma da KAS:
+  // todo estorno do histórico carregado (inclusive os anteriores ao período, que vêm em
+  // referenceEntries) é aplicado em ordem de data e consome o SALDO dos recebimentos que
+  // desfaz (valor menos estornos anteriores):
+  //   - reversalOfEntryId: vai para aquele recebimento, até o saldo dele;
+  //   - só o pagamento: rateado entre os recebimentos daquele pagamento até a data do
+  //     estorno que ainda têm saldo, na proporção do saldo, em centavos, com a sobra no
+  //     recebimento mais antigo que ainda comporta;
+  //   - o que passa do saldo, ou estorno anterior a todo recebimento do pagamento, fica no
+  //     total como sem vínculo, com o motivo (nunca herda campanha de recebimento futuro).
   const byId = new Map();
   const creditsByPayment = new Map(); // payment -> créditos de caixa daquele pagamento, por data
+  const debits = [];
+  const balance = new Map(); // id do recebimento -> centavos ainda estornáveis
   for (const e of [...referenceEntries, ...ledgerEntries]) {
     const eid = id(e._id);
     if (byId.has(eid)) continue; // referência repetida no período: conta uma vez
     byId.set(eid, e);
-    if (e.payment && CASH_CREDIT_TYPES.includes(e.type)) {
-      const k = id(e.payment);
-      if (!creditsByPayment.has(k)) creditsByPayment.set(k, []);
-      creditsByPayment.get(k).push(e);
+    const c = classifyLedgerEntry(e);
+    if (!c.counted) continue;
+    if (CASH_CREDIT_TYPES.includes(e.type) && c.signedCents > 0) {
+      balance.set(eid, c.signedCents);
+      if (e.payment) {
+        const k = id(e.payment);
+        if (!creditsByPayment.has(k)) creditsByPayment.set(k, []);
+        creditsByPayment.get(k).push(e);
+      }
+    } else if (CASH_DEBIT_TYPES.includes(e.type) && c.signedCents < 0) {
+      debits.push(e);
     }
   }
-  for (const list of creditsByPayment.values()) {
-    list.sort((x, y) => (toMs(x.occurredAt) ?? Infinity) - (toMs(y.occurredAt) ?? Infinity) || String(x._id).localeCompare(String(y._id)));
-  }
+  const byDate = (x, y) => (toMs(x.occurredAt) ?? Infinity) - (toMs(y.occurredAt) ?? Infinity) || String(x._id).localeCompare(String(y._id));
+  for (const list of creditsByPayment.values()) list.sort(byDate);
+  debits.sort(byDate);
 
   const originKey = (o) => `${o.nivel}|${o.source || ''}|${o.campaign || o.adId || ''}|${o.motivo || ''}`;
+  const semVinculoDe = (pid, motivo, cents) => ({ pid, o: { nivel: 'sem_vinculo', motivo }, cents });
 
-  // Divide `cents` (negativo) entre partes com peso, sem perder centavo: sobra na 1ª (mais antiga).
-  function splitCents(cents, weights) {
-    const total = weights.reduce((s, w) => s + w, 0);
-    const parts = weights.map((w) => (total > 0 ? Math.trunc((cents * w) / total) : 0));
-    parts[0] += cents - parts.reduce((s, x) => s + x, 0);
-    return parts;
+  function refundParts(e) {
+    const amount = toCents(e.amount);
+    const fallbackPid = id(e.patient) || null;
+    const exact = e.reversalOfEntryId ? byId.get(id(e.reversalOfEntryId)) : null;
+    let eligible = exact && balance.has(id(exact._id)) ? [exact] : [];
+    if (!eligible.length && e.payment) {
+      const all = creditsByPayment.get(id(e.payment)) || [];
+      const at = toMs(e.occurredAt);
+      eligible = at == null ? all : all.filter((c) => (toMs(c.occurredAt) ?? Infinity) <= at);
+      if (!eligible.length) {
+        return [semVinculoDe(fallbackPid || id(all[0]?.patient) || null,
+          all.length ? 'estorno_antes_do_recebimento' : 'estorno_sem_recebimento_original', -amount)];
+      }
+    }
+    if (!eligible.length) return [semVinculoDe(fallbackPid, 'estorno_sem_recebimento_original', -amount)];
+
+    const weights = eligible.map((c) => Math.max(0, balance.get(id(c._id)) || 0));
+    const room = weights.reduce((s, w) => s + w, 0);
+    const take = Math.min(amount, room);
+    const alloc = weights.map((w) => (room > 0 ? Math.trunc((take * w) / room) : 0));
+    let rest = take - alloc.reduce((s, x) => s + x, 0);
+    while (rest > 0) {
+      for (let i = 0; i < alloc.length && rest > 0; i++) {
+        if (alloc[i] < weights[i]) { alloc[i] += 1; rest -= 1; }
+      }
+    }
+    const out = [];
+    const idx = new Map();
+    eligible.forEach((orig, i) => {
+      if (!alloc[i]) return;
+      balance.set(id(orig._id), (balance.get(id(orig._id)) || 0) - alloc[i]);
+      const pid = id(orig.patient) || fallbackPid;
+      const o = resolveOrigin(pid, toMs(orig.occurredAt));
+      const k = originKey(o);
+      if (idx.has(k)) { out[idx.get(k)].cents -= alloc[i]; return; }
+      idx.set(k, out.length);
+      out.push({ pid: fallbackPid || pid, o, cents: -alloc[i] });
+    });
+    if (amount > take) out.push(semVinculoDe(fallbackPid, 'estorno_acima_do_saldo', -(amount - take)));
+    return out;
   }
+  // Todos os estornos em ordem (os de referência só consomem saldo; não entram na soma).
+  const refundPartsById = new Map();
+  for (const e of debits) refundPartsById.set(id(e._id), refundParts(e));
 
   // Crédito: origem na data dele. Débito: a MESMA origem/nível do(s) recebimento(s) que desfaz.
   // Retorna partes { pid, o, cents } que somam exatamente signedCents.
@@ -264,24 +317,7 @@ export function attributeReceivedRevenue({
       const pid = id(e.patient);
       return [{ pid, o: resolveOrigin(pid, toMs(e.occurredAt)), cents: signedCents }];
     }
-    const exact = e.reversalOfEntryId ? byId.get(id(e.reversalOfEntryId)) : null;
-    let origs = exact ? [exact] : [];
-    if (!origs.length && e.payment) {
-      const all = creditsByPayment.get(id(e.payment)) || [];
-      const at = toMs(e.occurredAt);
-      origs = at == null ? all : all.filter((c) => (toMs(c.occurredAt) ?? Infinity) <= at);
-      if (!origs.length) origs = all.slice(0, 1); // estorno com data anterior ao crédito: usa o mais antigo
-    }
-    const fallbackPid = id(e.patient) || id(origs[0]?.patient) || null;
-    if (!origs.length) return [{ pid: fallbackPid, o: { nivel: 'sem_vinculo', motivo: 'estorno_sem_recebimento_original' }, cents: signedCents }];
-    const resolved = origs.map((orig) => {
-      const pid = id(orig.patient) || fallbackPid;
-      return { pid: id(e.patient) || pid, o: resolveOrigin(pid, toMs(orig.occurredAt)), weight: toCents(orig.amount) };
-    });
-    if (new Set(resolved.map((r) => originKey(r.o))).size === 1) return [{ pid: resolved[0].pid, o: resolved[0].o, cents: signedCents }];
-    const weights = resolved.every((r) => r.weight > 0) ? resolved.map((r) => r.weight) : resolved.map(() => 1);
-    const parts = splitCents(signedCents, weights);
-    return resolved.map((r, i) => ({ pid: r.pid, o: r.o, cents: parts[i] })).filter((p) => p.cents !== 0);
+    return refundPartsById.get(id(e._id)) || [semVinculoDe(id(e.patient) || null, 'estorno_sem_recebimento_original', signedCents)];
   }
 
   // ── 4. Soma ──────────────────────────────────────────────────────────────────
@@ -416,7 +452,7 @@ async function defaultModels() {
 }
 
 const LEDGER_FIELDS = '_id type direction amount patient payment reversalOfEntryId occurredAt';
-const REFERENCE_FIELDS = '_id type amount patient payment occurredAt';
+const REFERENCE_FIELDS = '_id type direction amount patient payment reversalOfEntryId occurredAt';
 const ADCONV_FIELDS = '_id patient phone isAcquisition source attributionMethod campaign adId gclid fbc ttclid ctwaClid unknownReason eventTime';
 const ATTR_FIELDS = '_id phone source method campaign adId gclid fbclid ttclid ctwaClid firstMessageAt';
 
@@ -465,9 +501,28 @@ export async function loadRevenueInputs({ since, until, models } = {}) {
   const refOr = [];
   if (missingTargets.length) refOr.push({ _id: { $in: missingTargets } });
   if (missingPayments.length) refOr.push({ payment: { $in: missingPayments }, type: { $in: [...CASH_CREDIT_TYPES] } });
-  const referenceEntries = refOr.length
+  const referenceCredits = refOr.length
     ? await M.FinancialLedger.find({ $or: refOr }).select(REFERENCE_FIELDS).lean()
     : [];
+  // Estornos ANTERIORES ao período dos mesmos recebimentos/pagamentos: não entram na soma,
+  // mas já consumiram parte do saldo daquele recebimento (estorno-v3-saldo-por-recebimento).
+  let priorDebits = [];
+  if (since && cashDebits.length) {
+    const payments = [...new Set([...cashDebits, ...referenceCredits].map((e) => id(e.payment)).filter(Boolean))];
+    const receipts = [...new Set([
+      ...cashDebits.map((e) => id(e.reversalOfEntryId)).filter(Boolean),
+      ...referenceCredits.map((e) => id(e._id)),
+    ])];
+    const or = [];
+    if (payments.length) or.push({ payment: { $in: payments } });
+    if (receipts.length) or.push({ reversalOfEntryId: { $in: receipts } });
+    if (or.length) {
+      priorDebits = await M.FinancialLedger.find({
+        occurredAt: { $lt: since }, type: { $in: [...CASH_DEBIT_TYPES] }, direction: 'debit', $or: or,
+      }).select(REFERENCE_FIELDS).lean();
+    }
+  }
+  const referenceEntries = [...referenceCredits, ...priorDebits];
 
   const patientIds = [...new Set([...ledgerEntries, ...referenceEntries].map((e) => id(e.patient)).filter(Boolean))];
   if (!patientIds.length) {
