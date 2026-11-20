@@ -10,7 +10,7 @@
 // Formatos (ver docs/WHATSAPP_CONECTOR_EXTERNO.md §3):
 //   message.inbound  { waMessageId, chatId, phone|null, body, timestamp(seg), notifyName, selectedButtonId,
 //                      ctwa|null, externalAdReply|null, source: 'live'|'catchup' }
-//   message.outbound { waMessageId, chatId, phone|null, timestamp(seg), body?, type? }
+//   message.outbound { waMessageId, chatId, phone|null, timestamp(seg), body?, type?, clinicPhone? }
 //   (inbound também traz type? desde 20/11; campos novos são opcionais: conector antigo continua válido)
 //   poll.vote        { voterPhone|null, pollMessageId|null, optionName, respondedAtMs|null }
 

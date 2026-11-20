@@ -98,7 +98,7 @@ test('mensagens viram eventos normalizados (contato, @lid resolvido, grupo ignor
   assert.equal(inbound[0].ctwa.thumbnail, undefined);
   assert.equal(inbound[0].ctwa.sourceId, '1');
   assert.equal(inbound.find((d) => d.waMessageId === 'm2').phone, '5562988887777');
-  assert.deepEqual(events.find((e) => e.type === 'message.outbound').data, { waMessageId: 'o1', chatId: '5562999990000@c.us', phone: '5562999990000', timestamp: 11, body: 'Oi, temos amanhã à tarde', type: 'chat' });
+  assert.deepEqual(events.find((e) => e.type === 'message.outbound').data, { waMessageId: 'o1', chatId: '5562999990000@c.us', phone: '5562999990000', timestamp: 11, body: 'Oi, temos amanhã à tarde', type: 'chat', clinicPhone: null });
   assert.equal(events.find((e) => e.type === 'poll.vote').data.pollMessageId, 'p1');
 });
 
@@ -196,4 +196,26 @@ test('stop: destrói o Chrome e nenhum timer reabre depois', async () => {
   await timers.advance(10 * 60_000);
   assert.equal(clients.length, 1);
   assert.equal((await engine.getStatus()).status, 'stopped');
+});
+
+test('catch-up: relê recebidas e TAMBÉM as respostas da clínica (para a conversa não ficar "sem resposta")', async () => {
+  const { engine, clients, events, timers } = mk({ engine: { catchUpDelayMs: 1000, catchUpHours: 72 } });
+  await engine.start();
+  const c = clients[0];
+  const nowSec = Math.floor(timers.now() / 1000) + 100;
+  c.getChats = async () => [{
+    isGroup: false, timestamp: nowSec,
+    fetchMessages: async () => [
+      { from: '5562999990000@c.us', to: '5562900000000@c.us', body: 'quero agendar', timestamp: nowSec - 60, id: { _serialized: 'in1' }, _data: {} },
+      { fromMe: true, from: '5562900000000@c.us', to: '5562999990000@c.us', body: 'temos amanhã à tarde', type: 'chat', timestamp: nowSec - 30, id: { _serialized: 'out1' } },
+    ],
+  }];
+  c.emit('ready');
+  await timers.advance(1000);
+  await new Promise((r) => setTimeout(r, 20));
+  const inb = events.filter((e) => e.type === 'message.inbound').map((e) => e.data);
+  const out = events.filter((e) => e.type === 'message.outbound').map((e) => e.data);
+  assert.deepEqual(inb.map((d) => [d.waMessageId, d.source, d.clinicPhone]), [['in1', 'catchup', '5562900000000']]);
+  assert.deepEqual(out.map((d) => [d.waMessageId, d.body, d.clinicPhone]), [['out1', 'temos amanhã à tarde', '5562900000000']]);
+  await engine.stop?.();
 });

@@ -931,7 +931,10 @@ async function catchUpAttribution(client) {
       try {
         const msgs = await chat.fetchMessages({ limit: 8 });
         for (const m of msgs) {
-          if (m.fromMe || (m.timestamp || 0) < sinceSec) continue;
+          if ((m.timestamp || 0) < sinceSec) continue;
+          // 20/11: resposta da clínica no período (pelo celular) também volta, para a conversa
+          // não aparecer como "sem resposta" na tela Conversas. Mesmo caminho do ao vivo (message_create).
+          if (m.fromMe) { await handleOutboundClinicMessage(m); continue; }
           await dispatchInboundMessage(m, 'catchup');
           checked++;
         }
@@ -970,7 +973,11 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
         if (!phone || !/^55\d{10,11}$/.test(String(phone))) continue;
         const msgs = c.msgs?.getModelsArray?.() || [];
         for (const m of msgs.slice(-8)) {
-          if (m.id?.fromMe || (m.t || 0) < since) continue;
+          if ((m.t || 0) < since) continue;
+          if (m.id?.fromMe) {
+            out.push({ fromMe: true, waMessageId: m.id?._serialized || null, chatId: c.id?._serialized || null, t: m.t || 0, phone, body: m.body || '', type: m.type || null });
+            continue;
+          }
           const ctx = m.ctwaContext || null;
           // 18/11: leva também ctwaSignals/conversionData (o clid vem neles); extraído no Node por extractCtwa.
           out.push({
@@ -979,6 +986,7 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
             t: m.t || 0,
             phone,
             body: m.body || '',
+            type: m.type || null,
             ctwa: ctx ? {
               sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, title: ctx.title || null,
               ctwaClid: ctx.ctwaClid || null, ctwaSignals: toB64(ctx.ctwaSignals), conversionData: toB64(ctx.conversionData),
@@ -991,9 +999,16 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
 
     let found = 0;
     for (const r of rows) {
+      if (r.fromMe) {
+        await deliverEvent('message.outbound', {
+          waMessageId: r.waMessageId, chatId: r.chatId, phone: r.phone, timestamp: r.t || null,
+          body: String(r.body || '').slice(0, 4096), type: r.type || null, source: 'catchup',
+        });
+        continue;
+      }
       const res = await deliverEvent('message.inbound', {
         waMessageId: r.waMessageId, chatId: r.chatId, phone: r.phone, body: String(r.body || '').slice(0, 4096),
-        timestamp: r.t || null, notifyName: null, selectedButtonId: null, ctwa: r.ctwa, externalAdReply: null, source: 'catchup',
+        type: r.type || null, timestamp: r.t || null, notifyName: null, selectedButtonId: null, ctwa: r.ctwa, externalAdReply: null, source: 'catchup',
       });
       if (res?.attribution) found++;
     }
@@ -1096,6 +1111,9 @@ const CTWA_HEAVY_KEYS = new Set(['thumbnail', 'thumbnailUrl', 'originalImageUrl'
  * Mensagem recebida (whatsapp-web.js) → evento simples `message.inbound`. Resolve o telefone real de @lid
  * (precisa do navegador, por isso fica aqui) e lê os bytes do anúncio na página. null = não é de contato.
  */
+// Número da própria clínica a partir do id do chat (só @c.us; @lid não traz telefone).
+const ownPhoneOf = (id) => (typeof id === 'string' && id.endsWith('@c.us') ? id.replace('@c.us', '') : null);
+
 export async function normalizeInboundMessage(msg, source = 'live') {
   if (!msg || msg.fromMe || msg.isStatus) return null;
   const from = msg.from || '';
@@ -1122,6 +1140,7 @@ export async function normalizeInboundMessage(msg, source = 'live') {
     phone: phone || null,
     body: String(msg.body || '').slice(0, 4096),
     type: msg.type || null,
+    clinicPhone: ownPhoneOf(msg.to),
     timestamp: Number(msg.timestamp) || null,
     notifyName: msg._data?.notifyName || null,
     selectedButtonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
@@ -1362,6 +1381,7 @@ async function handleOutboundClinicMessage(msg) {
     timestamp: Number(msg.timestamp) || null,
     body: String(msg.body || '').slice(0, 4096),
     type: msg.type || null,
+    clinicPhone: ownPhoneOf(msg.from),
   });
 }
 

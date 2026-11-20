@@ -112,7 +112,8 @@ export async function mirrorWebMessage(ev, { env = process.env, log = console, c
   if (!phone) return { status: 'skipped', reason: 'sem_telefone' };
 
   const inbound = ev.direction === 'inbound';
-  const clinic = normalizeE164BR(clinicPhone || env.CLINIC_PHONE_E164 || '') || '0000000000000';
+  // Número da clínica: do próprio evento (id do chat do WhatsApp), senão da env, senão zeros (campo obrigatório).
+  const clinic = normalizeE164BR(ev.clinicPhone || clinicPhone || env.CLINIC_PHONE_E164 || '') || '0000000000000';
   const at = atDate(ev.timestamp);
   const type = messageTypeOf(ev.type);
   const content = contentOf(ev.body, ev.type);

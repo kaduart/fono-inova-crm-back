@@ -170,6 +170,7 @@ export function createWhatsAppEngine({
       phone: phone || null,
       body: String(msg.body || '').slice(0, 4096),
       type: msg.type || null,
+      clinicPhone: ownPhoneOf(msg.to),
       timestamp: Number(msg.timestamp) || null,
       notifyName: msg._data?.notifyName || null,
       selectedButtonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
@@ -179,6 +180,9 @@ export function createWhatsAppEngine({
     };
   }
 
+  // Número da própria clínica a partir do id do chat (só @c.us; @lid não traz telefone).
+  const ownPhoneOf = (id) => (typeof id === 'string' && id.endsWith('@c.us') ? id.replace('@c.us', '') : null);
+
   async function normalizeOutbound(msg) {
     if (!msg || !msg.fromMe || msg.isStatus) return null;
     const to = msg.to || '';
@@ -186,7 +190,7 @@ export function createWhatsAppEngine({
     let phone = to.endsWith('@c.us') ? to.replace('@c.us', '') : null;
     if (!phone && to.endsWith('@lid')) phone = await resolveLidPhone(msg.client || client, to);
     if (!phone) return null;
-    return { waMessageId: msg.id?._serialized || null, chatId: to, phone, timestamp: Number(msg.timestamp) || null, body: String(msg.body || '').slice(0, 4096), type: msg.type || null };
+    return { waMessageId: msg.id?._serialized || null, chatId: to, phone, timestamp: Number(msg.timestamp) || null, body: String(msg.body || '').slice(0, 4096), type: msg.type || null, clinicPhone: ownPhoneOf(msg.from) };
   }
 
   async function voterPhone(vote) {
@@ -218,7 +222,9 @@ export function createWhatsAppEngine({
         if (client !== c) return;
         try {
           for (const m of await chat.fetchMessages({ limit: 8 })) {
-            if (m.fromMe || (m.timestamp || 0) < sinceSec) continue;
+            if ((m.timestamp || 0) < sinceSec) continue;
+            // Resposta da clínica no período também volta (a tela Conversas não fica "sem resposta").
+            if (m.fromMe) { await emit('message.outbound', await normalizeOutbound(m)); continue; }
             await emit('message.inbound', await normalizeInbound(m, 'catchup'));
             checked++;
           }

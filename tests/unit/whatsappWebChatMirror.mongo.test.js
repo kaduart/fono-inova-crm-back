@@ -137,6 +137,17 @@ describe('enviada pela clínica', () => {
   });
 });
 
+describe('número da clínica', () => {
+  it('vem do próprio evento (id do chat) quando a env não existe', async () => {
+    await mirrorWebMessage(inbound({ clinicPhone: '5562911112222' }), { env: { WA_WEB_CHAT_MIRROR: 'on' }, log: quiet });
+    expect((await Message.findOne({}).lean()).to).toBe('5562911112222');
+  });
+  it('sem evento nem env: zeros (campo obrigatório), como antes', async () => {
+    await mirrorWebMessage(inbound(), { env: { WA_WEB_CHAT_MIRROR: 'on' }, log: quiet });
+    expect((await Message.findOne({}).lean()).to).toBe('0000000000000');
+  });
+});
+
 describe('ordem', () => {
   it('mensagem antiga (catch-up) é gravada, mas não passa à frente da última da conversa', async () => {
     await mirrorWebMessage(inbound({ waMessageId: 'novo', body: 'mensagem nova', timestamp: T0 + 600 }), { env: ON, log: quiet });
