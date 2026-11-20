@@ -1121,6 +1121,7 @@ export async function normalizeInboundMessage(msg, source = 'live') {
     chatId: from,
     phone: phone || null,
     body: String(msg.body || '').slice(0, 4096),
+    type: msg.type || null,
     timestamp: Number(msg.timestamp) || null,
     notifyName: msg._data?.notifyName || null,
     selectedButtonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
@@ -1359,6 +1360,8 @@ async function handleOutboundClinicMessage(msg) {
     chatId: to,
     phone,
     timestamp: Number(msg.timestamp) || null,
+    body: String(msg.body || '').slice(0, 4096),
+    type: msg.type || null,
   });
 }
 

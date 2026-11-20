@@ -169,6 +169,7 @@ export function createWhatsAppEngine({
       chatId: from,
       phone: phone || null,
       body: String(msg.body || '').slice(0, 4096),
+      type: msg.type || null,
       timestamp: Number(msg.timestamp) || null,
       notifyName: msg._data?.notifyName || null,
       selectedButtonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
@@ -185,7 +186,7 @@ export function createWhatsAppEngine({
     let phone = to.endsWith('@c.us') ? to.replace('@c.us', '') : null;
     if (!phone && to.endsWith('@lid')) phone = await resolveLidPhone(msg.client || client, to);
     if (!phone) return null;
-    return { waMessageId: msg.id?._serialized || null, chatId: to, phone, timestamp: Number(msg.timestamp) || null };
+    return { waMessageId: msg.id?._serialized || null, chatId: to, phone, timestamp: Number(msg.timestamp) || null, body: String(msg.body || '').slice(0, 4096), type: msg.type || null };
   }
 
   async function voterPhone(vote) {

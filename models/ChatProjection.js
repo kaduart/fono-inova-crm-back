@@ -6,6 +6,8 @@
  *
  * NUNCA escrever diretamente nesta coleção via controller.
  * Toda escrita vem via eventos (MESSAGE_PERSISTED, WHATSAPP_MESSAGE_SENT).
+ * Exceção (20/11/2026): services/whatsappWebChatMirror.js grava as conversas do WhatsApp Web direto,
+ * porque o grupo de workers "whatsapp" (que consome esses eventos) não roda em produção.
  */
 
 import mongoose from 'mongoose';

@@ -89,7 +89,7 @@ test('mensagens viram eventos normalizados (contato, @lid resolvido, grupo ignor
   c.emit('message', { from: '5562999990000@c.us', body: 'oi', timestamp: 10, id: { _serialized: 'm1' }, _data: { notifyName: 'Ana', ctwaContext: { sourceId: '1', thumbnail: 'AAAA' } } });
   c.emit('message', { from: '999@lid', body: 'vim do anúncio', id: { _serialized: 'm2' }, client: c, _data: {} });
   c.emit('message', { from: '123@g.us', body: 'grupo', id: { _serialized: 'm3' }, _data: {} });
-  c.emit('message_create', { fromMe: true, to: '5562999990000@c.us', id: { _serialized: 'o1' }, timestamp: 11 });
+  c.emit('message_create', { fromMe: true, to: '5562999990000@c.us', id: { _serialized: 'o1' }, timestamp: 11, body: 'Oi, temos amanhã à tarde', type: 'chat' });
   c.emit('vote_update', { voter: '5562999990000@c.us', selectedOptions: [{ name: 'Confirmar presença ✅' }], parentMsgKey: { _serialized: 'p1' }, interractedAtTs: 5 });
   await new Promise((r) => setTimeout(r, 20));
   const inbound = events.filter((e) => e.type === 'message.inbound').map((e) => e.data);
@@ -98,7 +98,7 @@ test('mensagens viram eventos normalizados (contato, @lid resolvido, grupo ignor
   assert.equal(inbound[0].ctwa.thumbnail, undefined);
   assert.equal(inbound[0].ctwa.sourceId, '1');
   assert.equal(inbound.find((d) => d.waMessageId === 'm2').phone, '5562988887777');
-  assert.deepEqual(events.find((e) => e.type === 'message.outbound').data, { waMessageId: 'o1', chatId: '5562999990000@c.us', phone: '5562999990000', timestamp: 11 });
+  assert.deepEqual(events.find((e) => e.type === 'message.outbound').data, { waMessageId: 'o1', chatId: '5562999990000@c.us', phone: '5562999990000', timestamp: 11, body: 'Oi, temos amanhã à tarde', type: 'chat' });
   assert.equal(events.find((e) => e.type === 'poll.vote').data.pollMessageId, 'p1');
 });
 

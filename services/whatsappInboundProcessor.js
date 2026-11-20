@@ -10,7 +10,8 @@
 // Formatos (ver docs/WHATSAPP_CONECTOR_EXTERNO.md §3):
 //   message.inbound  { waMessageId, chatId, phone|null, body, timestamp(seg), notifyName, selectedButtonId,
 //                      ctwa|null, externalAdReply|null, source: 'live'|'catchup' }
-//   message.outbound { waMessageId, chatId, phone|null, timestamp(seg) }
+//   message.outbound { waMessageId, chatId, phone|null, timestamp(seg), body?, type? }
+//   (inbound também traz type? desde 20/11; campos novos são opcionais: conector antigo continua válido)
 //   poll.vote        { voterPhone|null, pollMessageId|null, optionName, respondedAtMs|null }
 
 const isOn = (name) => process.env[name] !== 'false';
@@ -71,6 +72,13 @@ export async function processInboundConvenioInterest(ev) {
   return convenios;
 }
 
+/** Texto da mensagem na tela Conversas (WA_WEB_CHAT_MIRROR=on). Catch-up também grava: cobre o worker suspenso. */
+export async function processInboundChatMirror(ev) {
+  if (!ev?.phone) return null;
+  const { mirrorWebMessage } = await import('./whatsappWebChatMirror.js');
+  return mirrorWebMessage({ ...ev, direction: 'inbound' });
+}
+
 /**
  * Mensagem recebida: roda as três regras de forma independente (uma falhar não impede as outras).
  * Catch-up (mensagens relidas depois de o WhatsApp ficar fora) só refaz a origem, como antes.
@@ -78,11 +86,12 @@ export async function processInboundConvenioInterest(ev) {
 export async function processInboundMessage(ev) {
   if (!ev) return {};
   const steps = ev.source === 'catchup'
-    ? [['attribution', processInboundAttribution]]
+    ? [['attribution', processInboundAttribution], ['chat', processInboundChatMirror]]
     : [
       ['attribution', processInboundAttribution],
       ['confirmation', processInboundAppointmentConfirmation],
       ['convenio', processInboundConvenioInterest],
+      ['chat', processInboundChatMirror],
     ];
   const out = {};
   for (const [name, fn] of steps) {
@@ -99,6 +108,12 @@ export async function processInboundMessage(ev) {
 /** Mensagem que a CLÍNICA mandou (pelo ERP ou na mão): data na lista de interesse, para o envio em massa não repetir. */
 export async function processOutboundClinicMessage(ev) {
   if (!ev?.phone) return null;
+  try {
+    const { scheduleOutboundMirror } = await import('./whatsappWebChatMirror.js');
+    scheduleOutboundMirror(ev); // não espera: a cópia sai depois que o ERP gravou a dele
+  } catch (err) {
+    console.warn('[WhatsAppInbound] ⚠️ cópia da mensagem enviada não agendada (ignorado):', err?.message);
+  }
   const { recordChatActivity } = await import('./convenioWaitlistWhatsapp.js');
   return recordChatActivity([{ phone: ev.phone, clinicAt: atDate(ev.timestamp) }]);
 }
@@ -148,6 +163,7 @@ export default {
   processInboundAttribution,
   processInboundAppointmentConfirmation,
   processInboundConvenioInterest,
+  processInboundChatMirror,
   processOutboundClinicMessage,
   processPollVote,
   processConnectorEvent,
