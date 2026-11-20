@@ -4,7 +4,8 @@
  * Roda os handlers reais de createClient() com um Client falso e relógio falso:
  *   1) ready cancela um timer já armado;
  *   2) loading_screen depois do ready não rearma;
- *   3) travamento real antes do ready ainda dispara a recuperação (exit 2 em 10 min).
+ *   3) travamento real antes do ready ainda dispara a recuperação (exit 2 em 10 min);
+ *   4) (20/11) corrida: ready chega enquanto o loading_screen anterior espera o saveState.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
@@ -25,6 +26,7 @@ vi.mock('wwebjs-mongo', () => ({ MongoStore: class {} }));
 vi.mock('../../models/WhatsAppWebState.js', () => ({ default: { findOneAndUpdate: vi.fn(async () => null), findOne: vi.fn(async () => null) } }));
 
 const svc = await import('../../services/whatsappWebJsService.js');
+const WhatsAppWebState = (await import('../../models/WhatsAppWebState.js')).default;
 const TEN_MIN = 10 * 60 * 1000;
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -71,5 +73,21 @@ describe('watchdog do loading_screen (handlers reais)', () => {
     vi.advanceTimersByTime(3 * TEN_MIN);
     expect(exitSpy).not.toHaveBeenCalledWith(2);
     expect(svc.whatsappState.ready).toBe(true);
+  });
+
+  it('4) corrida de produção: ready durante o saveState do loading_screen 67% não deixa timer armado', async () => {
+    const c = svc.createClient();
+    await emit(c, 'disconnected', 'teste'); // zera o estado de módulo (isReady) deixado pelos testes anteriores
+    let releaseSave;
+    WhatsAppWebState.findOneAndUpdate.mockImplementationOnce(() => new Promise((r) => { releaseSave = () => r(null); }));
+    const [loadingHandler] = c.listeners('loading_screen');
+    const pending = loadingHandler(67, 'WhatsApp');   // pausa no saveState (banco lento)
+    await emit(c, 'ready');                            // ready chega no meio (~200 ms em produção)
+    await emit(c, 'loading_screen', 99, 'WhatsApp');
+    releaseSave();
+    await pending;
+    await flush();
+    vi.advanceTimersByTime(3 * TEN_MIN);
+    expect(exitSpy).not.toHaveBeenCalledWith(2);
   });
 });

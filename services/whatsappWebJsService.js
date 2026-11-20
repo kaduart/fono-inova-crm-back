@@ -793,12 +793,16 @@ export function createClient() {
     // (19/11: 9 saídas "Travado em loading_screen" e 11 OOMs). Já conectado: só loga.
     if (!shouldArmLoadingWatchdog(isReady)) return;
     connectionStatus = 'connecting';
-    await saveState();
+    // 20/11/2026: arma ANTES do await. Antes armava depois do saveState(): o loading_screen 67/95%
+    // chegava ~200 ms antes do ready, o ready rodava DURANTE o await (limpava um timer ainda nulo)
+    // e o timer era armado em seguida, já conectado, sem ninguém para limpar → saída falsa
+    // "Travado em loading_screen" 10 min depois (19/11: 4 saídas após o #91).
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
     loadingWatchdog = setTimeout(() => {
       console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 10min — saindo para respawn limpo.');
       process.exit(2);
     }, 10 * 60 * 1000);
+    await saveState();
   });
 
   newClient.on('disconnected', async (reason) => {
