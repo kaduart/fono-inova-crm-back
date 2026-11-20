@@ -12,7 +12,11 @@ import IORedis from 'ioredis';
 import { assertNotProductionDb } from '../utils/assertNotProductionDb.js';
 
 const BASE_URL = 'http://localhost:5000';
-const SERVICE_TOKEN = process.env.ADMIN_API_TOKEN || 'amanda_service_token_fono_inova_2025_secure_xyz789';
+const SERVICE_TOKEN = process.env.ADMIN_API_TOKEN;
+if (!SERVICE_TOKEN) {
+  console.error('Defina ADMIN_API_TOKEN no ambiente (sem valor padrão: o código é público).');
+  process.exit(1);
+}
 const USER_TOKEN = process.env.USER_JWT_TOKEN || ''; // JWT de admin para rotas com middleware 'auth'
 const PATIENT_ID = '6a285cfa7681a873d5c6a00b'; // ana teste 2
 

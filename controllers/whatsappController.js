@@ -1,5 +1,6 @@
 // controllers/whatsappController.js - VERSÃO CORRIGIDA
 
+import { verifyMetaSubscription } from '../utils/metaWebhookVerify.js';
 import mongoose from 'mongoose';
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
@@ -423,37 +424,21 @@ export const whatsappController = {
     async getWebhook(req, res) {
         // 🆕 LOG IMEDIATO - Confirma que a função foi chamada
         console.log("[WEBHOOK VERIFY] ➡️ Requisição recebida:", {
-            url: req.url,
-            query: req.query,
+            // Sem a query: ela traz hub.verify_token (o segredo enviado pela Meta).
+            mode: req.query?.['hub.mode'],
             headers: req.headers['user-agent']?.substring(0, 50),
             ip: req.ip
         });
         
         try {
             // 🆕 Trim para remover espaços acidentais
-            const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
-            const mode = req.query["hub.mode"];
-            const token = req.query["hub.verify_token"]?.trim();
-            const challenge = req.query["hub.challenge"];
-
-            // 🆕 DEBUG: Log detalhado
-            console.log("[WEBHOOK VERIFY] Debug:", {
-                envTokenPresente: !!verifyToken,
-                envToken: verifyToken,
-                receivedToken: token,
-                mode: mode,
-                challenge: challenge,
-                match: token === verifyToken,
-                envTokenLength: verifyToken?.length,
-                receivedTokenLength: token?.length
-            });
-
-            if (mode && token && mode === "subscribe" && token === verifyToken) {
+            // Nunca registrar o token esperado (logs do Render). Env ausente = 403.
+            const check = verifyMetaSubscription(req.query, process.env.WHATSAPP_VERIFY_TOKEN);
+            if (check.status === 200) {
                 console.log("[WEBHOOK VERIFY] ✅ Sucesso - retornando challenge");
-                return res.status(200).send(challenge);
+                return res.status(200).send(check.body);
             }
-            
-            console.log("[WEBHOOK VERIFY] ❌ Falha na verificação - 403");
+            console.log(`[WEBHOOK VERIFY] ❌ Recusado: ${check.reason}`);
             return res.sendStatus(403);
         } catch (err) {
             console.error("❌ Erro na verificação do webhook:", err);

@@ -91,6 +91,7 @@ import signupRoutes from "./routes/signup.js";
 import syncRoutes from "./routes/sync.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
+import { verifyMetaSubscription } from './utils/metaWebhookVerify.js';
 import whatsappRoutes from "./routes/whatsapp.js";
 import whatsappVPSRoutes from "./routes/whatsappVPS.js";
 import whatsappConnectorEventsRoutes from "./routes/whatsappConnectorEvents.js";
@@ -300,19 +301,13 @@ app.post('/api/whatsapp/upload-media', corsHeaders, upload.single('file'), whats
 // 🚨 WEBHOOK DO WHATSAPP - DEVE VIR ANTES DOS MIDDLEWARES DE BODY PARSING
 // O Meta envia GET com query string que não pode ser alterada por body parsers
 app.get('/api/whatsapp/webhook', (req, res) => {
-    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"]?.trim();
-    const challenge = req.query["hub.challenge"];
-    
-    console.log("[WEBHOOK VERIFY] Recebido:", { mode, token: token?.substring(0, 10), challenge });
-    
-    if (mode === "subscribe" && token === verifyToken) {
+    // Sem registrar nem comparar com token vazio: env ausente = 403 (utils/metaWebhookVerify.js).
+    const check = verifyMetaSubscription(req.query, process.env.WHATSAPP_VERIFY_TOKEN);
+    if (check.status === 200) {
         console.log("[WEBHOOK VERIFY] ✅ Sucesso");
-        return res.status(200).send(challenge);
+        return res.status(200).send(check.body);
     }
-    
-    console.log("[WEBHOOK VERIFY] ❌ Falha - token não bate ou mode incorreto");
+    console.log(`[WEBHOOK VERIFY] ❌ Recusado: ${check.reason}`);
     return res.sendStatus(403);
 });
 

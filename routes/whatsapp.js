@@ -3,6 +3,7 @@ import multer from 'multer';
 import { getIo } from '../config/socket.js';
 import { whatsappController } from '../controllers/whatsappController.js';
 import { whatsappGuard, healthCheck, getGuardStats } from '../middleware/whatsappGuard.js';
+import { verifyMetaSubscription } from '../utils/metaWebhookVerify.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
@@ -115,69 +116,16 @@ router.get('/webhook/debug', (req, res) => {
     const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
     res.json({
         tokenConfigured: !!verifyToken,
-        tokenLength: verifyToken?.length,
-        tokenPreview: verifyToken ? `${verifyToken.substring(0, 5)}...${verifyToken.substring(verifyToken.length - 5)}` : null,
         env: process.env.NODE_ENV
     });
 });
 
 // 🔍 DEBUG: Testar verificação do webhook manualmente
 router.get('/webhook/test-verify', (req, res) => {
-    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
-    
-    // Debug completo da requisição
-    console.log("[TEST VERIFY] ========== DEBUG ==========");
-    console.log("[TEST VERIFY] req.query:", req.query);
-    console.log("[TEST VERIFY] req.originalUrl:", req.originalUrl);
-    console.log("[TEST VERIFY] req.url:", req.url);
-    
-    // Tenta pegar dos query params
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"]?.trim();
-    const challenge = req.query["hub.challenge"];
-    
-    // Tenta parsear manualmente se não encontrou
-    let manualMode, manualToken, manualChallenge;
-    if (!mode || !token) {
-        try {
-            const url = new URL(req.originalUrl, `http://${req.headers.host}`);
-            manualMode = url.searchParams.get('hub.mode');
-            manualToken = url.searchParams.get('hub.verify_token')?.trim();
-            manualChallenge = url.searchParams.get('hub.challenge');
-            console.log("[TEST VERIFY] Manual parse:", { manualMode, manualToken, manualChallenge });
-        } catch (e) {
-            console.log("[TEST VERIFY] Erro no manual parse:", e.message);
-        }
-    }
-    
-    const finalMode = mode || manualMode;
-    const finalToken = token || manualToken;
-    const finalChallenge = challenge || manualChallenge;
-    
-    console.log("[TEST VERIFY] Final values:", { finalMode, finalToken, finalChallenge });
-    console.log("[TEST VERIFY] Env token:", verifyToken);
-    console.log("[TEST VERIFY] Match:", finalToken === verifyToken);
-    
-    if (finalMode === "subscribe" && finalToken === verifyToken) {
-        return res.status(200).send(finalChallenge);
-    }
-    
-    return sendApiError(
-      res,
-      new AppError('FORBIDDEN', "Forbidden", {
-        status: 403,
-        extra: { debug: {
-            modeReceived: finalMode,
-            tokenReceived: finalToken,
-            tokenExpected: verifyToken,
-            match: finalToken === verifyToken,
-            modeOk: finalMode === "subscribe",
-            rawQuery: req.query,
-            originalUrl: req.originalUrl
-        } },
-      }),
-      req
-    );
+    // Só diz se bateria; nunca devolve nem registra o token esperado.
+    const check = verifyMetaSubscription(req.query, process.env.WHATSAPP_VERIFY_TOKEN);
+    if (check.status === 200) return res.status(200).send(check.body);
+    return sendApiError(res, new AppError('FORBIDDEN', 'Forbidden', { status: 403, extra: { motivo: check.reason } }), req);
 });
 
 // 🧪 Teste de socket

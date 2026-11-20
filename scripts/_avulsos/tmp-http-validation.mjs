@@ -28,7 +28,7 @@ app.use('/api/v2', insuranceV2Routes);
 // Token real: precisa de um Admin existente (auth valida existência no banco)
 const admin = await mongoose.connection.db.collection('admins').findOne({}, { projection: { _id: 1, role: 1 } });
 if (!admin) { console.error('sem Admin no banco'); process.exit(1); }
-const token = jwt.sign({ id: admin._id.toString(), role: 'admin' }, process.env.JWT_SECRET || 'secreta', { expiresIn: '1h' });
+const token = jwt.sign({ id: admin._id.toString(), role: 'admin' }, (process.env.JWT_SECRET || (() => { throw new Error('Defina JWT_SECRET no ambiente'); })()), { expiresIn: '1h' });
 const AUTH = ['Authorization', `Bearer ${token}`];
 
 const R = [];
