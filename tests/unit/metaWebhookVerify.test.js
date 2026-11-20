@@ -29,10 +29,10 @@ describe('verifyMetaSubscription', () => {
     }
   });
 
-  it('o controller não tem mais valor padrão', async () => {
+  it('o controller não tem valor fixo: só META_VERIFY_TOKEN ou, sem ele, WHATSAPP_VERIFY_TOKEN', async () => {
     const fs = await import('node:fs');
     const src = fs.readFileSync(new URL('../../controllers/leadController.js', import.meta.url), 'utf8');
-    expect(src).not.toMatch(/META_VERIFY_TOKEN\s*\|\|/);
-    expect(src).toMatch(/verifyMetaSubscription\(req\.query\)/);
+    expect(src).not.toMatch(/VERIFY_TOKEN\s*\|\|\s*['"`]/);
+    expect(src).toMatch(/verifyMetaSubscription\(req\.query, process\.env\.META_VERIFY_TOKEN \|\| process\.env\.WHATSAPP_VERIFY_TOKEN\)/);
   });
 });
