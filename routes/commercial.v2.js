@@ -39,7 +39,7 @@ import { markAttendanceConfirmationQueued } from '../services/appointment/attend
 import { evaluationsWithoutPackage, unconfirmedNextDay, confirmationReminderText } from '../services/commercial/evaluationConfirmationQueues.js';
 import {
   OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, NOT_ANONYMOUS_VISIT,
-  humanWait, leadAssignee, currentHandoffAt, HUMAN_REPLY_STATUSES,
+  humanWait, leadAssignee, currentHandoffAt, waitKeyOf, HUMAN_REPLY_STATUSES,
   sortFitLeads, packagesEnding, sortByRecentContact, daysBetween,
   renewalStage, churnRisk, churnMessage, stoppedTrend, STOPPED_SPIKE, CHURN_DAYS, CHURN_JUSTIFIED_WINDOW_DAYS, CHURN_MAX_PAUSE_DAYS,
 } from '../services/commercial/commercialRules.js';
@@ -357,12 +357,73 @@ router.get('/stopped-trend', ...staff, async (req, res) => {
   }
 });
 
+const LEAD_WAIT_PROJECTION = {
+  name: 1, contact: 1, therapyArea: 1, status: 1, origin: 1, createdAt: 1,
+  currentState: 1, autoReplyEnabled: 1, manualControl: 1, 'amandaAgent.handoff': 1,
+};
+
+// Estado da espera humana de cada lead (fila e "Marcar como respondido" usam o mesmo cálculo).
+// `since`: início da janela de mensagens; encaminhamento antigo ainda aberto amplia a busca.
+async function humanWaitsFor(leads, since) {
+  const ids = leads.map(l => l._id);
+  const msgSince = leads.reduce((min, l) => {
+    const h = currentHandoffAt(l);
+    return h && h < min ? h : min;
+  }, since);
+
+  // Por lead: última recebida e última manual ACEITA pelo provedor (falha não grava Message)
+  const msgRows = await Message.aggregate([
+    { $match: { lead: { $in: ids }, timestamp: { $gte: msgSince } } },
+    { $sort: { timestamp: -1 } },
+    {
+      $group: {
+        _id: '$lead',
+        lastInboundAt: { $max: { $cond: [{ $eq: ['$direction', 'inbound'] }, '$timestamp', null] } },
+        lastHumanReplyAt: {
+          $max: {
+            $cond: [{
+              $and: [
+                { $eq: ['$direction', 'outbound'] },
+                { $eq: ['$metadata.sentBy', 'manual'] },
+                { $in: ['$status', HUMAN_REPLY_STATUSES] },
+              ],
+            }, '$timestamp', null],
+          },
+        },
+        lastContent: { $first: '$content' },
+      },
+    },
+  ]);
+  const msgMap = Object.fromEntries(msgRows.map(m => [m._id.toString(), m]));
+
+  // Última marcação "respondido" de cada lead, com o encaminhamento a que se refere
+  const marks = await CommercialContact.aggregate([
+    { $match: { target: { $in: ids }, kind: 'lead_reply' } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: '$target', at: { $first: '$createdAt' }, handoffAt: { $first: '$handoffAt' } } },
+  ]);
+  const markMap = Object.fromEntries(marks.map(m => [m._id.toString(), m]));
+
+  return leads.map(l => {
+    const key = l._id.toString();
+    const msg = msgMap[key];
+    const w = humanWait({
+      lead: l,
+      lastInboundAt: msg?.lastInboundAt || null,
+      lastHumanReplyAt: msg?.lastHumanReplyAt || null,
+      lastReplyMark: markMap[key] || null,
+    });
+    return { l, w, msg };
+  });
+}
+
 // Fila "Lead sem resposta": espera por resposta HUMANA (docs/COMMERCIAL_QUEUES.md).
 // O cronômetro começa no encaminhamento atual da Amanda (ou na última mensagem do lead).
 // Encerra com mensagem manual aceita pelo provedor ou com "Marcar como respondido"
-// do encaminhamento atual. Leads ainda com a Amanda vão só para a contagem `withAmanda`.
+// da espera que a atendente viu (`waitKey`). Leads ainda com a Amanda vão só para `withAmanda`.
 // Query: days (janela, 1–14, padrão 3), minutes (espera mínima, padrão 0);
 // `hours` continua aceito por compatibilidade com o front antigo.
+// Encaminhamento ainda aberto entra mesmo fora da janela (ex.: sexta antes de feriado longo).
 router.get('/leads-waiting', ...staff, async (req, res) => {
   try {
     const days = clampInt(req.query.days, 3, 1, 14);
@@ -372,74 +433,30 @@ router.get('/leads-waiting', ...staff, async (req, res) => {
     const hours = Math.round(minutes / 60);
     const now = new Date();
     const since = moment().tz(TIMEZONE).subtract(days, 'days').toDate();
-    const empty = { hours, minutes, days, withAmanda: 0, items: [] };
+    const empty = { hours, minutes, days, withAmanda: 0, outsideWindow: 0, items: [] };
 
     // Candidatos: leads abertos com movimento na janela (mensagem recebida atualiza
-    // lastInteractionAt/updatedAt) ou encaminhados pela Amanda na janela
+    // lastInteractionAt/updatedAt), encaminhados na janela, ou com encaminhamento ainda aberto
     const leads = await Lead.find(
       {
         status: { $in: OPEN_LEAD_STATUSES }, convertedToPatient: { $in: [null, undefined] }, ...NOT_ANONYMOUS_VISIT,
-        $or: [{ updatedAt: { $gte: since } }, { lastInteractionAt: { $gte: since } }, { 'amandaAgent.handoff.at': { $gte: since } }],
+        $or: [
+          { updatedAt: { $gte: since } }, { lastInteractionAt: { $gte: since } }, { 'amandaAgent.handoff.at': { $gte: since } },
+          { currentState: 'HANDOFF', 'manualControl.active': true },
+        ],
       },
-      {
-        name: 1, contact: 1, therapyArea: 1, status: 1, origin: 1, createdAt: 1,
-        currentState: 1, autoReplyEnabled: 1, manualControl: 1, 'amandaAgent.handoff': 1,
-      },
+      LEAD_WAIT_PROJECTION,
     ).lean();
     if (!leads.length) return res.json({ success: true, data: empty });
-    const ids = leads.map(l => l._id);
-    // Encaminhamento antigo ainda aberto: busca mensagens desde ele, para não perder a resposta
-    const msgSince = leads.reduce((min, l) => {
-      const h = currentHandoffAt(l);
-      return h && h < min ? h : min;
-    }, since);
 
-    // Por lead: última recebida e última manual ACEITA pelo provedor (falha não grava Message)
-    const msgRows = await Message.aggregate([
-      { $match: { lead: { $in: ids }, timestamp: { $gte: msgSince } } },
-      { $sort: { timestamp: -1 } },
-      {
-        $group: {
-          _id: '$lead',
-          lastInboundAt: { $max: { $cond: [{ $eq: ['$direction', 'inbound'] }, '$timestamp', null] } },
-          lastHumanReplyAt: {
-            $max: {
-              $cond: [{
-                $and: [
-                  { $eq: ['$direction', 'outbound'] },
-                  { $eq: ['$metadata.sentBy', 'manual'] },
-                  { $in: ['$status', HUMAN_REPLY_STATUSES] },
-                ],
-              }, '$timestamp', null],
-            },
-          },
-          lastContent: { $first: '$content' },
-        },
-      },
-    ]);
-    const msgMap = Object.fromEntries(msgRows.map(m => [m._id.toString(), m]));
-
-    // Última marcação "respondido" de cada lead, com o encaminhamento a que se refere
-    const marks = await CommercialContact.aggregate([
-      { $match: { target: { $in: ids }, kind: 'lead_reply' } },
-      { $sort: { createdAt: -1 } },
-      { $group: { _id: '$target', at: { $first: '$createdAt' }, handoffAt: { $first: '$handoffAt' } } },
-    ]);
-    const markMap = Object.fromEntries(marks.map(m => [m._id.toString(), m]));
-
+    const states = await humanWaitsFor(leads, since);
     let withAmanda = 0;
+    let outsideWindow = 0;
     const waiting = [];
-    for (const l of leads) {
-      const key = l._id.toString();
-      const msg = msgMap[key];
-      const w = humanWait({
-        lead: l,
-        lastInboundAt: msg?.lastInboundAt || null,
-        lastHumanReplyAt: msg?.lastHumanReplyAt || null,
-        lastReplyMark: markMap[key] || null,
-      });
+    for (const { l, w, msg } of states) {
       if (w.state === 'com_amanda') { withAmanda += 1; continue; }
       if (w.state !== 'esperando' || now - w.since < minutes * 60_000) continue;
+      if (w.since < since) outsideWindow += 1;
       waiting.push({ l, w, msg });
     }
 
@@ -462,6 +479,7 @@ router.get('/leads-waiting', ...staff, async (req, res) => {
           status: l.status,
           waitingSince: w.since,
           waitingMinutes: Math.floor((now - w.since) / 60_000),
+          waitKey: waitKeyOf(w),
           reason: w.reason,
           handoffAt: w.handoffAt,
           handoffMotivo: w.handoffAt ? (l.amandaAgent?.handoff?.motivo || null) : null,
@@ -471,7 +489,7 @@ router.get('/leads-waiting', ...staff, async (req, res) => {
       })
       .sort((a, b) => b.waitingMinutes - a.waitingMinutes);
 
-    res.json({ success: true, data: { ...empty, withAmanda, items } });
+    res.json({ success: true, data: { ...empty, withAmanda, outsideWindow, items } });
   } catch (err) {
     console.error('[commercial.v2] /leads-waiting error:', err);
     sendApiError(res, err, req);
@@ -630,9 +648,26 @@ router.post('/contacts', ...staff, async (req, res) => {
       if (targetType !== 'lead') {
         return sendApiError(res, new AppError('BAD_REQUEST', 'Resposta marcada só vale para lead.', { status: 400 }), req);
       }
-      const lead = await Lead.findById(targetId, { currentState: 1, 'amandaAgent.handoff': 1 }).lean();
+      const lead = await Lead.findById(targetId, LEAD_WAIT_PROJECTION).lean();
       if (!lead) return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado.', { status: 404 }), req);
-      replyFields = { handoffAt: currentHandoffAt(lead), closure: 'informado_pela_atendente' };
+      // A fila manda a referência da espera que a atendente viu (`waitKey`). Se a espera mudou
+      // (novo encaminhamento ou nova mensagem), não grava: a tela atualiza e a nova pendência fica.
+      // Sem `waitKey` (painel do chat, que mostra a conversa ao vivo), vale a espera atual.
+      const seenKey = typeof req.body?.waitKey === 'string' ? req.body.waitKey : null;
+      if (seenKey) {
+        const [{ w }] = await humanWaitsFor([lead], moment().tz(TIMEZONE).subtract(14, 'days').toDate());
+        const currentKey = waitKeyOf(w);
+        if (!currentKey) {
+          return res.json({ success: true, data: null, alreadyClosed: true });
+        }
+        if (currentKey !== seenKey) {
+          console.warn(`[commercial.v2] lead_reply recusado: espera mudou (lead ${targetId})`);
+          return sendApiError(res, new AppError('WAIT_CHANGED',
+            'Esta espera mudou desde que a tela foi carregada (novo encaminhamento ou nova mensagem). A lista foi atualizada.',
+            { status: 409, details: { waitKey: currentKey } }), req);
+        }
+      }
+      replyFields = { handoffAt: currentHandoffAt(lead), closure: 'informado_pela_atendente', ...(seenKey && { waitKey: seenKey }) };
     }
 
     // Duplo clique não duplica: mesmo alvo/tipo/usuário em 5 min devolve o registro existente

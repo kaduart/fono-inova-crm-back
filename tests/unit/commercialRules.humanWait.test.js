@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanWait, leadAssignee, currentHandoffAt } from '../../services/commercial/commercialRules.js';
+import { humanWait, leadAssignee, currentHandoffAt, waitKeyOf } from '../../services/commercial/commercialRules.js';
 
 // Datas fictícias, 20/11 no horário de Brasília (-03:00)
 const t = hhmm => new Date(`2026-11-20T${hhmm}:00-03:00`);
@@ -138,5 +138,17 @@ describe('teste de aceite do analista (Ana)', () => {
     w = humanWait({ lead: novo, lastInboundAt: amanha('09:59'), lastHumanReplyAt: t('09:11') });
     expect(w).toMatchObject({ state: 'esperando', reason: 'handoff' });
     expect(leadAssignee(novo)).toEqual({ kind: 'ninguem' });
+  });
+});
+
+describe('waitKeyOf: referência da espera vista na tela', () => {
+  it('muda com novo encaminhamento e com nova mensagem; some quando respondido', () => {
+    const a = humanWait({ lead: encaminhado(t('09:00')), lastInboundAt: t('08:58') });
+    const b = humanWait({ lead: encaminhado(t('10:00')), lastInboundAt: t('08:58') });
+    const nova = humanWait({ lead: encaminhado(t('09:00')), lastInboundAt: t('09:30'), lastHumanReplyAt: t('09:12') });
+    const resp = humanWait({ lead: encaminhado(t('09:00')), lastInboundAt: t('08:58'), lastHumanReplyAt: t('09:12') });
+    expect(waitKeyOf(a)).not.toBe(waitKeyOf(b));
+    expect(waitKeyOf(nova)).toMatch(/^nova_mensagem\|/);
+    expect(waitKeyOf(resp)).toBeNull();
   });
 });

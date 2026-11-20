@@ -158,6 +158,15 @@ export function humanWait({ lead, lastInboundAt = null, lastHumanReplyAt = null,
   return { state: 'respondido', since: null, reason: null, handoffAt, closedBy };
 }
 
+// Referência da espera que a atendente viu na tela: muda quando há novo encaminhamento
+// ou nova mensagem do lead. "Marcar como respondido" envia essa referência e o servidor
+// só grava se ela ainda for a espera aberta (senão, a tela atualiza e a nova pendência fica).
+export function waitKeyOf(w) {
+  if (!w || w.state !== 'esperando' || !w.since) return null;
+  const h = w.handoffAt ? new Date(w.handoffAt).toISOString() : '-';
+  return `${w.reason}|${h}|${new Date(w.since).toISOString()}`;
+}
+
 // Prioridade do lead para encaixe: lista de espera e quente primeiro, depois o mais recente
 const LEAD_PRIORITY = { lista_espera: 0, lead_quente: 1, engajado: 2, atendimento: 2, em_andamento: 2 };
 export function sortFitLeads(leads) {

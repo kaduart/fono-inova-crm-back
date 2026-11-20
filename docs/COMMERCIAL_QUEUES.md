@@ -43,7 +43,10 @@ O acesso é só para `admin` e `secretary`.
   - nova mensagem do lead depois da resposta volta a contar a partir dela (`reason: 'nova_mensagem'`); novo encaminhamento reinicia do encaminhamento (`reason: 'handoff'`), e resposta ou marcação anteriores não valem para ele;
   - **responsável** (`assignee`): nome do atendente que pausou a Amanda ou respondeu (`manualControl.takenOverBy`); `ninguem` quando só a Amanda encaminhou; `nao_identificado` quando alguém pausou sem usuário (token da Agenda Externa);
   - `minutes` define a espera mínima para aparecer (padrão 0); `hours` continua aceito por compatibilidade.
+  - encaminhamento ainda aberto entra mesmo fora da janela (ex.: sexta antes de feriado prolongado); `outsideWindow` conta quantos são;
+  - cada item traz `waitKey`, a referência da espera mostrada na tela (motivo, encaminhamento e início).
 - **"Marcar como respondido" (resposta dada pelo celular):** grava `CommercialContact` `lead_reply` com `handoffAt` (o encaminhamento atual, ou nulo) e `closure: 'informado_pela_atendente'`, para o histórico mostrar que o fechamento foi informado pela atendente e não comprovado por mensagem. Vale só para o encaminhamento em que foi feita.
+  A fila envia o `waitKey` que a atendente viu. O servidor recalcula a espera: se mudou (novo encaminhamento ou nova mensagem), responde 409 `WAIT_CHANGED` e não grava, para não encerrar a espera nova; se já foi encerrada, responde 200 com `alreadyClosed`. Sem `waitKey` (painel do chat, que mostra a conversa ao vivo), vale a espera atual.
 - **Área do lead:** `Lead.therapyArea` é texto livre, então `normalizeArea()` converte para a especialidade do Doctor (por exemplo, "fono" vira `fonoaudiologia` e "Terapia Ocupacional" vira `terapia_ocupacional`).
 - **Contato registrado:**
   - um contato registrado nos últimos 7 dias manda o item para o fim da fila sem escondê-lo;

@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import express from 'express';
 import request from 'supertest';
+import { humanWait, waitKeyOf } from '../../services/commercial/commercialRules.js';
 
 const oid = () => new mongoose.Types.ObjectId();
 const ANA = oid();
@@ -142,6 +143,58 @@ describe('GET /leads-waiting', () => {
     expect(res.body.data.items.every(i => i.waitingMinutes >= 20)).toBe(true);
     res = await request(app).get('/api/v2/commercial/leads-waiting?hours=2');
     expect(res.body.data.minutes).toBe(120);
+  });
+});
+
+describe('GET /leads-waiting: janela e referência da espera', () => {
+  it('encaminhamento ainda aberto entra mesmo fora da janela, e é contado em outsideWindow', async () => {
+    const res = await request(app).get('/api/v2/commercial/leads-waiting');
+    const filter = leadFind.mock.calls[0][0];
+    expect(filter.$or).toContainEqual({ currentState: 'HANDOFF', 'manualControl.active': true });
+    expect(res.body.data.outsideWindow).toBe(0); // o antigo já foi respondido
+  });
+
+  it('cada item traz waitKey, a referência da espera mostrada na tela', async () => {
+    const res = await request(app).get('/api/v2/commercial/leads-waiting');
+    const ana = res.body.data.items.find(i => i.name === 'Lead Ana');
+    expect(ana.waitKey).toBe(`handoff|${L.comAna.amandaAgent.handoff.at.toISOString()}|${L.comAna.amandaAgent.handoff.at.toISOString()}`);
+  });
+});
+
+describe('POST /contacts lead_reply com a espera que a atendente viu (waitKey)', () => {
+  const keyOf = (lead) => {
+    const row = msgRows.find(m => String(m._id) === String(lead._id));
+    const mark = marks.find(m => String(m._id) === String(lead._id)) || null;
+    return waitKeyOf(humanWait({ lead, lastInboundAt: row?.lastInboundAt, lastHumanReplyAt: row?.lastHumanReplyAt, lastReplyMark: mark }));
+  };
+
+  it('mesma espera: grava a marcação com a referência', async () => {
+    leadFindById.mockReturnValue(L.ninguem);
+    const waitKey = keyOf(L.ninguem);
+    const res = await request(app).post('/api/v2/commercial/contacts')
+      .send({ targetType: 'lead', targetId: String(L.ninguem._id), kind: 'lead_reply', waitKey });
+    expect(res.status).toBe(201);
+    expect(contactCreate.mock.calls[0][0]).toMatchObject({ waitKey, handoffAt: L.ninguem.amandaAgent.handoff.at, closure: 'informado_pela_atendente' });
+  });
+
+  it('a Amanda encaminhou de novo depois que a tela carregou: 409 e nada é gravado', async () => {
+    const vistoNaTela = keyOf(L.ninguem); // encaminhamento A
+    const encaminhamentoB = { ...L.ninguem, ...handoff(minAtras(1)) };
+    leadFindById.mockReturnValue(encaminhamentoB);
+    const res = await request(app).post('/api/v2/commercial/contacts')
+      .send({ targetType: 'lead', targetId: String(L.ninguem._id), kind: 'lead_reply', waitKey: vistoNaTela });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('WAIT_CHANGED');
+    expect(contactCreate).not.toHaveBeenCalled();
+  });
+
+  it('espera já encerrada (resposta aceita antes do clique): não grava e avisa', async () => {
+    leadFindById.mockReturnValue(L.respondido);
+    const res = await request(app).post('/api/v2/commercial/contacts')
+      .send({ targetType: 'lead', targetId: String(L.respondido._id), kind: 'lead_reply', waitKey: 'handoff|x|y' });
+    expect(res.status).toBe(200);
+    expect(res.body.alreadyClosed).toBe(true);
+    expect(contactCreate).not.toHaveBeenCalled();
   });
 });
 
