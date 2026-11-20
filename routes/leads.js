@@ -25,6 +25,8 @@ import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { extractWebsiteLeadPersonalData } from '../utils/websiteLeadPayload.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
+import { metaNotificationGuard } from '../utils/metaWebhookVerify.js';
+import { sanitizeInput } from '../middleware/sanitize.js';
 import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
@@ -40,7 +42,9 @@ router.get('/commercial-playbook', authorize(['admin', 'secretary']), (_req, res
 
 // Meta Ads Webhook (GET para verificação, POST para receber leads)
 router.get('/webhook/meta', metaLeadWebhook);
-router.post('/webhook/meta', metaLeadWebhook);
+// POST: corpo CRU (o parser global pula esta rota, server.js) para conferir X-Hub-Signature-256
+// com META_APP_SECRET antes de criar o lead; depois o mesmo saneamento do resto da API.
+router.post('/webhook/meta', express.raw({ type: '*/*', limit: '1mb' }), metaNotificationGuard(), sanitizeInput, metaLeadWebhook);
 
 // Google Ads Webhook
 router.post('/webhook/google', googleLeadWebhook);

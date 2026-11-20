@@ -318,7 +318,8 @@ const urlParser = express.urlencoded({ limit: '50mb', extended: true });
 
 // Ignorar requisições multipart (deixar para o multer tratar)
 // Eventos do conector WhatsApp: a assinatura HMAC cobre o corpo CRU — o parser JSON não pode consumir antes.
-const RAW_BODY_PATHS = ['/api/whatsapp-connector/events'];
+// Notificações de leads da Meta: assinatura X-Hub-Signature-256 também cobre o corpo cru.
+const RAW_BODY_PATHS = ['/api/whatsapp-connector/events', '/api/leads/webhook/meta'];
 app.use((req, res, next) => {
     if (req.headers['content-type']?.includes('multipart/form-data')) {
         return next();
