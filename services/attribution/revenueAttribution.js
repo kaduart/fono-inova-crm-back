@@ -80,16 +80,31 @@ export function classifyLedgerEntry(e = {}) {
   return { counted: false, reason: e.type || 'tipo_ausente' };
 }
 
-// Mesmo contato publicitário: mesmo canal E (mesmo click id, ou mesmo anúncio, ou mesma campanha).
+// Mesmo contato publicitário? Precedência explícita entre identificadores (do mais forte
+// para o mais fraco): click id (gclid, ttclid, ctwaClid, fbclid) → anúncio (adId) → campanha.
+// O primeiro nível em que OS DOIS lados têm valor decide: igual = mesmo contato; diferente =
+// contatos diferentes, mesmo que um nível mais fraco coincida (ex.: gclid diferente com o
+// mesmo nome de campanha NÃO é o mesmo contato). Canal diferente nunca é o mesmo contato.
 // O fbc da AdConversion carrega o fbclid (fb.1.<ts>.<fbclid>), então compara pelo final.
-function sameTouch(acq = {}, a = {}) {
+export const TOUCH_RULE_VERSION = 'touch-v2-precedencia';
+// Modelo de atribuição: primeiro contato válido na data de CADA recebimento. Outros modelos
+// (último contato, linear) entram como novas versões, sem mudar o resultado desta.
+export const ATTRIBUTION_MODEL = 'primeiro-contato-por-recebimento-v1';
+export const SUPPORTED_MODELS = Object.freeze([ATTRIBUTION_MODEL]);
+export const REFUND_RULE_VERSION = 'estorno-v2-rateio-por-recebimento';
+export function sameTouch(acq = {}, a = {}) {
   if (!acq.source || acq.source !== a.source) return false;
-  const eq = (x, y) => Boolean(x) && Boolean(y) && String(x) === String(y);
   const fbclidOf = (fbc) => (fbc ? String(fbc).split('.').pop() : null);
-  if (eq(acq.gclid, a.gclid) || eq(acq.ttclid, a.ttclid) || eq(acq.ctwaClid, a.ctwaClid)) return true;
-  if (eq(fbclidOf(acq.fbc), a.fbclid)) return true;
-  if (eq(acq.adId, a.adId)) return true;
-  if (eq(acq.campaign, a.campaign)) return true;
+  const levels = [
+    [acq.gclid, a.gclid], [acq.ttclid, a.ttclid], [acq.ctwaClid, a.ctwaClid], [fbclidOf(acq.fbc) || acq.fbclid, a.fbclid || fbclidOf(a.fbc)],
+  ];
+  // nível 1: qualquer click id presente nos dois lados decide
+  const clickPairs = levels.filter(([x, y]) => x && y);
+  if (clickPairs.length) return clickPairs.every(([x, y]) => String(x) === String(y));
+  // nível 2: anúncio; nível 3: campanha
+  for (const [x, y] of [[acq.adId, a.adId], [acq.campaign, a.campaign]]) {
+    if (x && y) return String(x) === String(y);
+  }
   return false;
 }
 
@@ -124,7 +139,9 @@ export function attributeReceivedRevenue({
   adConversions = [],
   leadAttributions = [],
   patients = [],
+  modelo = ATTRIBUTION_MODEL,
 } = {}) {
+  if (!SUPPORTED_MODELS.includes(modelo)) throw new Error(`modelo_de_atribuicao_nao_suportado: ${modelo}`);
   // ── 1. Telefone de cada paciente e quantos pacientes usam cada telefone ──────
   const phoneByPatient = new Map();
   const ownersByPhone = new Map(); // phoneKey -> Set(patientId)
@@ -208,31 +225,63 @@ export function attributeReceivedRevenue({
     return { ...origin, nivel, motivo, telefoneCompartilhado: shared };
   }
 
-  // ── 3. Recebimento original de cada estorno/reversão ─────────────────────────
+  // ── 3. Recebimento(s) original(is) de cada estorno/reversão ──────────────────
+  // reversalOfEntryId aponta o recebimento exato. Sem ele, o estorno é do PAGAMENTO: vale
+  // para os recebimentos (créditos de caixa) daquele pagamento até a data do estorno. Se
+  // todos têm a mesma origem e nível, o estorno vai inteiro para ela; se divergem (ex.:
+  // parcela antes e parcela depois da campanha), é rateado na proporção do valor de cada
+  // recebimento, em centavos, com a sobra no recebimento mais antigo (REFUND_RULE_VERSION).
   const byId = new Map();
-  const creditByPayment = new Map(); // payment -> crédito de caixa mais antigo daquele pagamento
+  const creditsByPayment = new Map(); // payment -> créditos de caixa daquele pagamento, por data
   for (const e of [...referenceEntries, ...ledgerEntries]) {
-    byId.set(id(e._id), e);
+    const eid = id(e._id);
+    if (byId.has(eid)) continue; // referência repetida no período: conta uma vez
+    byId.set(eid, e);
     if (e.payment && CASH_CREDIT_TYPES.includes(e.type)) {
       const k = id(e.payment);
-      const cur = creditByPayment.get(k);
-      if (!cur || (toMs(e.occurredAt) ?? Infinity) < (toMs(cur.occurredAt) ?? Infinity)) creditByPayment.set(k, e);
+      if (!creditsByPayment.has(k)) creditsByPayment.set(k, []);
+      creditsByPayment.get(k).push(e);
     }
   }
-  const originalOf = (e) => (e.reversalOfEntryId ? byId.get(id(e.reversalOfEntryId)) : null)
-    || (e.payment ? creditByPayment.get(id(e.payment)) : null)
-    || null;
+  for (const list of creditsByPayment.values()) {
+    list.sort((x, y) => (toMs(x.occurredAt) ?? Infinity) - (toMs(y.occurredAt) ?? Infinity) || String(x._id).localeCompare(String(y._id)));
+  }
 
-  // Crédito: origem na data dele. Débito: a MESMA origem/nível do recebimento que ele desfaz.
-  function attributionOf(e, signedCents) {
+  const originKey = (o) => `${o.nivel}|${o.source || ''}|${o.campaign || o.adId || ''}|${o.motivo || ''}`;
+
+  // Divide `cents` (negativo) entre partes com peso, sem perder centavo: sobra na 1ª (mais antiga).
+  function splitCents(cents, weights) {
+    const total = weights.reduce((s, w) => s + w, 0);
+    const parts = weights.map((w) => (total > 0 ? Math.trunc((cents * w) / total) : 0));
+    parts[0] += cents - parts.reduce((s, x) => s + x, 0);
+    return parts;
+  }
+
+  // Crédito: origem na data dele. Débito: a MESMA origem/nível do(s) recebimento(s) que desfaz.
+  // Retorna partes { pid, o, cents } que somam exatamente signedCents.
+  function attributionsOf(e, signedCents) {
     if (signedCents >= 0) {
       const pid = id(e.patient);
-      return { pid, o: resolveOrigin(pid, toMs(e.occurredAt)) };
+      return [{ pid, o: resolveOrigin(pid, toMs(e.occurredAt)), cents: signedCents }];
     }
-    const orig = originalOf(e);
-    const pid = id(e.patient) || id(orig?.patient) || null;
-    if (!orig) return { pid, o: { nivel: 'sem_vinculo', motivo: 'estorno_sem_recebimento_original' } };
-    return { pid, o: resolveOrigin(id(orig.patient) || pid, toMs(orig.occurredAt)) };
+    const exact = e.reversalOfEntryId ? byId.get(id(e.reversalOfEntryId)) : null;
+    let origs = exact ? [exact] : [];
+    if (!origs.length && e.payment) {
+      const all = creditsByPayment.get(id(e.payment)) || [];
+      const at = toMs(e.occurredAt);
+      origs = at == null ? all : all.filter((c) => (toMs(c.occurredAt) ?? Infinity) <= at);
+      if (!origs.length) origs = all.slice(0, 1); // estorno com data anterior ao crédito: usa o mais antigo
+    }
+    const fallbackPid = id(e.patient) || id(origs[0]?.patient) || null;
+    if (!origs.length) return [{ pid: fallbackPid, o: { nivel: 'sem_vinculo', motivo: 'estorno_sem_recebimento_original' }, cents: signedCents }];
+    const resolved = origs.map((orig) => {
+      const pid = id(orig.patient) || fallbackPid;
+      return { pid: id(e.patient) || pid, o: resolveOrigin(pid, toMs(orig.occurredAt)), weight: toCents(orig.amount) };
+    });
+    if (new Set(resolved.map((r) => originKey(r.o))).size === 1) return [{ pid: resolved[0].pid, o: resolved[0].o, cents: signedCents }];
+    const weights = resolved.every((r) => r.weight > 0) ? resolved.map((r) => r.weight) : resolved.map(() => 1);
+    const parts = splitCents(signedCents, weights);
+    return resolved.map((r, i) => ({ pid: r.pid, o: r.o, cents: parts[i] })).filter((p) => p.cents !== 0);
   }
 
   // ── 4. Soma ──────────────────────────────────────────────────────────────────
@@ -250,27 +299,28 @@ export function attributeReceivedRevenue({
       continue;
     }
     netCents += c.signedCents;
-    const { pid, o } = attributionOf(e, c.signedCents);
-    levelCents[o.nivel] += c.signedCents;
-    const credit = c.signedCents > 0 ? c.signedCents : 0;
-    const debit = c.signedCents < 0 ? -c.signedCents : 0;
+    for (const { pid, o, cents } of attributionsOf(e, c.signedCents)) {
+      levelCents[o.nivel] += cents;
+      const credit = cents > 0 ? cents : 0;
+      const debit = cents < 0 ? -cents : 0;
 
-    if (o.nivel === 'sem_vinculo') {
-      semVinculo.recebidoCents += credit; semVinculo.estornosCents += debit; semVinculo.liquidoCents += c.signedCents;
-      semVinculo.lancamentos += 1; if (pid) semVinculo.pacientes.add(pid);
-      semVinculo.motivos[o.motivo] = (semVinculo.motivos[o.motivo] || 0) + c.signedCents;
-      continue;
+      if (o.nivel === 'sem_vinculo') {
+        semVinculo.recebidoCents += credit; semVinculo.estornosCents += debit; semVinculo.liquidoCents += cents;
+        semVinculo.lancamentos += 1; if (pid) semVinculo.pacientes.add(pid);
+        semVinculo.motivos[o.motivo] = (semVinculo.motivos[o.motivo] || 0) + cents;
+        continue;
+      }
+      const campaignKey = o.campaign || o.adId || null;
+      const k = `${o.nivel}|${o.source}|${campaignKey || ''}`;
+      const line = lines.get(k) || {
+        nivel: o.nivel, origem: o.source, campanha: o.campaign, adId: o.adId,
+        recebidoCents: 0, estornosCents: 0, liquidoCents: 0, pacientes: new Set(), lancamentos: 0, motivos: {},
+      };
+      line.recebidoCents += credit; line.estornosCents += debit; line.liquidoCents += cents;
+      line.lancamentos += 1; if (pid) line.pacientes.add(pid);
+      line.motivos[o.motivo] = (line.motivos[o.motivo] || 0) + 1;
+      lines.set(k, line);
     }
-    const campaignKey = o.campaign || o.adId || null;
-    const k = `${o.nivel}|${o.source}|${campaignKey || ''}`;
-    const line = lines.get(k) || {
-      nivel: o.nivel, origem: o.source, campanha: o.campaign, adId: o.adId,
-      recebidoCents: 0, estornosCents: 0, liquidoCents: 0, pacientes: new Set(), lancamentos: 0, motivos: {},
-    };
-    line.recebidoCents += credit; line.estornosCents += debit; line.liquidoCents += c.signedCents;
-    line.lancamentos += 1; if (pid) line.pacientes.add(pid);
-    line.motivos[o.motivo] = (line.motivos[o.motivo] || 0) + 1;
-    lines.set(k, line);
   }
 
   const somaNiveis = levelCents.comprovada + levelCents.provavel + levelCents.sem_vinculo;
@@ -297,6 +347,7 @@ export function attributeReceivedRevenue({
       lancamentos: semVinculo.lancamentos,
       motivos: Object.fromEntries(Object.entries(semVinculo.motivos).map(([m, v]) => [m, toReais(v)])),
     },
+    regras: { modelo: ATTRIBUTION_MODEL, contato: TOUCH_RULE_VERSION, estorno: REFUND_RULE_VERSION },
     invariante: { somaNiveis: toReais(somaNiveis), totalLiquidoLedger: toReais(netCents), fecha: somaNiveis === netCents },
     excluidos: Object.fromEntries(Object.entries(excluded).map(([t, x]) => [t, { lancamentos: x.lancamentos, valor: toReais(x.valorCents) }])),
   };
@@ -365,7 +416,7 @@ async function defaultModels() {
 }
 
 const LEDGER_FIELDS = '_id type direction amount patient payment reversalOfEntryId occurredAt';
-const REFERENCE_FIELDS = '_id type patient payment occurredAt';
+const REFERENCE_FIELDS = '_id type amount patient payment occurredAt';
 const ADCONV_FIELDS = '_id patient phone isAcquisition source attributionMethod campaign adId gclid fbc ttclid ctwaClid unknownReason eventTime';
 const ATTR_FIELDS = '_id phone source method campaign adId gclid fbclid ttclid ctwaClid firstMessageAt';
 
@@ -393,14 +444,14 @@ export async function loadRevenueAttribution({ since, until, models } = {}) {
   // Recebimento original de estornos/reversões cujo crédito está fora do período
   // (o estorno usa a campanha/nível do recebimento original, na data dele).
   const inPeriod = new Set(ledgerEntries.map((e) => id(e._id)));
-  const creditPaymentsInPeriod = new Set(ledgerEntries
-    .filter((e) => e.payment && CASH_CREDIT_TYPES.includes(e.type)).map((e) => id(e.payment)));
   const cashDebits = ledgerEntries.filter((e) => CASH_DEBIT_TYPES.includes(e.type) && (e.payment || e.reversalOfEntryId));
   const missingTargets = [...new Set(cashDebits
     .filter((e) => e.reversalOfEntryId && !inPeriod.has(id(e.reversalOfEntryId)))
     .map((e) => id(e.reversalOfEntryId)))];
+  // Estorno só do pagamento: carrega TODOS os créditos dele (no período ou não), porque o
+  // estorno é rateado entre os recebimentos daquele pagamento até a data dele.
   const missingPayments = [...new Set(cashDebits
-    .filter((e) => e.payment && !creditPaymentsInPeriod.has(id(e.payment)))
+    .filter((e) => e.payment && !e.reversalOfEntryId)
     .map((e) => id(e.payment)))];
   const refOr = [];
   if (missingTargets.length) refOr.push({ _id: { $in: missingTargets } });

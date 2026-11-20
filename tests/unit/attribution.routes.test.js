@@ -116,7 +116,10 @@ describe('GET /api/v2/analytics/roi/revenue-attribution', () => {
     // o pagamento de outubro foi antes do anúncio do Hugo (20/11): o estorno sai do sem vínculo
     expect(res.body.data.porNivel).toEqual({ comprovada: 480, provavel: 570, sem_vinculo: 170 });
     expect(res.body.data.linhas.find((l) => l.adId === 'AD-FICTICIO-2')).toMatchObject({ liquido: 160, estornos: 0 });
-    expect(m.FinancialLedger.calls[1]).toEqual({ $or: [{ payment: { $in: [antigo.payment] }, type: { $in: ['payment_received', 'package_purchase', 'insurance_received'] } }] });
+    // estorno só do pagamento: busca TODOS os créditos dele (o do TikTok, no período, também
+    // entra, porque o estorno é rateado entre os recebimentos daquele pagamento)
+    expect(m.FinancialLedger.calls[1].$or[0].payment.$in).toContain(antigo.payment);
+    expect(m.FinancialLedger.calls[1]).toEqual({ $or: [{ payment: { $in: expect.arrayContaining([antigo.payment]) }, type: { $in: ['payment_received', 'package_purchase', 'insurance_received'] } }] });
   });
 });
 

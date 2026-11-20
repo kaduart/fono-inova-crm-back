@@ -5,7 +5,7 @@
  * desfaz o recebimento original e invariante soma dos níveis == líquido do ledger.
  */
 import { describe, it, expect } from 'vitest';
-import { attributeReceivedRevenue, classifyLedgerEntry, phoneFormatsOf } from '../../services/attribution/revenueAttribution.js';
+import { attributeReceivedRevenue, classifyLedgerEntry, phoneFormatsOf, sameTouch, TOUCH_RULE_VERSION, ATTRIBUTION_MODEL, REFUND_RULE_VERSION } from '../../services/attribution/revenueAttribution.js';
 import { amostra, ESPERADO, P, PHONES, ledgerEntries, adConversions } from '../../services/attribution/fixtures/receitaFicticia.js';
 
 const linha = (r, nivel, origem) => r.linhas.filter((l) => l.nivel === nivel && l.origem === origem);
@@ -280,5 +280,159 @@ describe('phoneFormatsOf', () => {
       expect(f, g).toContain(g);
     }
     expect(phoneFormatsOf('+55 62 99999-0000').sort()).toEqual(phoneFormatsOf('62999990000').sort());
+  });
+});
+
+// ── Revisão do analista (20/11): precedência entre identificadores, versões e estornos ──
+describe('sameTouch: precedência click id → anúncio → campanha', () => {
+  const g = (o) => ({ source: 'google_ads', ...o });
+  it.each([
+    ['gclid diferente com o MESMO nome de campanha = contatos diferentes', g({ gclid: 'G1', campaign: 'X' }), g({ gclid: 'G2', campaign: 'X' }), false],
+    ['mesmo gclid com nome de campanha diferente (renomeada) = mesmo contato', g({ gclid: 'G1', campaign: 'X' }), g({ gclid: 'G1', campaign: 'Y' }), true],
+    ['adId diferente com a mesma campanha = contatos diferentes', g({ adId: 'A1', campaign: 'X' }), g({ adId: 'A2', campaign: 'X' }), false],
+    ['mesmo adId, campanha diferente = mesmo contato (anúncio vence campanha)', g({ adId: 'A1', campaign: 'X' }), g({ adId: 'A1', campaign: 'Y' }), true],
+    ['só um lado tem gclid: decide o próximo nível (adId)', g({ gclid: 'G1', adId: 'A1' }), g({ adId: 'A1' }), true],
+    ['só campanha, igual = mesmo contato', g({ campaign: 'X' }), g({ campaign: 'X' }), true],
+    ['só campanha, diferente = contatos diferentes', g({ campaign: 'X' }), g({ campaign: 'Y' }), false],
+    ['canal diferente nunca é o mesmo contato, mesmo com gclid igual', g({ gclid: 'G1' }), { source: 'meta_ads', gclid: 'G1' }, false],
+    ['só o canal coincide (nenhum identificador nos dois lados) = sem evidência', g({ gclid: 'G1' }), g({ campaign: 'X' }), false],
+    ['dois click ids presentes: todos precisam bater', g({ gclid: 'G1', ctwaClid: 'C1' }), g({ gclid: 'G1', ctwaClid: 'C2' }), false],
+    ['fbc da AdConversion casa com o fbclid da LeadAttribution', { source: 'meta_ads', fbc: 'fb.1.1700000000.FBCLID-9' }, { source: 'meta_ads', fbclid: 'FBCLID-9', campaign: 'outra' }, true],
+  ])('%s', (_n, acq, a, esperado) => {
+    expect(sameTouch(acq, a)).toBe(esperado);
+  });
+
+  it('gclid diferente com a mesma campanha NÃO antecipa a data: pagamento anterior fica sem a campanha', () => {
+    const conv = { _id: 'c', patient: 'px', phone: '5562988880001', isAcquisition: true, source: 'google_ads', attributionMethod: 'gclid', campaign: 'X', adId: 'AD-NOVO', gclid: 'G-NOVO', eventTime: d('2026-11-10T13:00:00Z') };
+    const outroClique = { phone: '5562988880001', source: 'google_ads', method: 'gclid', campaign: 'X', adId: 'AD-VELHO', gclid: 'G-VELHO', firstMessageAt: d('2026-09-01T12:00:00Z') };
+    const r = attributeReceivedRevenue({ ledgerEntries: [pay('out', 300, '2026-10-15T15:00:00Z')], adConversions: [conv], leadAttributions: [outroClique], patients: pacientePx });
+    // fica com o clique antigo (a LeadAttribution, que tem evidência própria), não com a conversão nova
+    expect(r.linhas).toEqual([expect.objectContaining({ origem: 'google_ads', campanha: 'X', adId: 'AD-VELHO', liquido: 300 })]);
+    expect(r.porNivel.comprovada).toBe(300);
+  });
+});
+
+describe('versões das regras no resultado', () => {
+  it('o resultado diz qual modelo e quais regras produziram os números', () => {
+    const r = attributeReceivedRevenue(amostra);
+    expect(r.regras).toEqual({ modelo: ATTRIBUTION_MODEL, contato: TOUCH_RULE_VERSION, estorno: REFUND_RULE_VERSION });
+    expect(ATTRIBUTION_MODEL).toBe('primeiro-contato-por-recebimento-v1');
+  });
+
+  it('modelo não suportado é recusado (outros modelos entram como versão nova)', () => {
+    expect(() => attributeReceivedRevenue({ ...amostra, modelo: 'ultimo-contato' })).toThrow(/modelo_de_atribuicao_nao_suportado/);
+  });
+});
+
+describe('estornos parciais, vários recebimentos e períodos diferentes', () => {
+  const credit = (_id, amount, occurredAt, payment) => ({ _id, type: 'payment_received', direction: 'credit', amount, patient: 'px', payment, occurredAt: d(occurredAt) });
+  const refund = (_id, amount, occurredAt, extra) => ({ _id, type: 'refund', direction: 'debit', amount, patient: 'px', occurredAt: d(occurredAt), ...extra });
+
+  it('estorno parcial: recebeu 300 da campanha, estornou 100 → líquido 200 na mesma campanha', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [pay('nov', 300, '2026-11-10T15:00:00Z'), refund('e1', 100, '2026-11-18T15:00:00Z', { payment: 'pay-nov' })],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    expect(r.linhas).toEqual([expect.objectContaining({ adId: 'AD-NOV', recebido: 300, estornos: 100, liquido: 200, lancamentos: 2 })]);
+    expect(r.invariante.fecha).toBe(true);
+  });
+
+  it('dois estornos parciais do mesmo recebimento somam e não passam do recebido', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [
+        pay('nov', 300, '2026-11-10T15:00:00Z'),
+        refund('e1', 100, '2026-11-18T15:00:00Z', { payment: 'pay-nov' }),
+        refund('e2', 50, '2026-11-19T15:00:00Z', { payment: 'pay-nov' }),
+      ],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    expect(r.linhas[0]).toMatchObject({ recebido: 300, estornos: 150, liquido: 150 });
+  });
+
+  it('um pagamento, duas parcelas (antes e depois da campanha): estorno só do pagamento é rateado pelo valor de cada parcela', () => {
+    // parcela 1 (outubro, antes da campanha) 100; parcela 2 (novembro, depois) 300. Estorno de 200 só com o payment.
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [
+        credit('p1', 100, '2026-10-15T15:00:00Z', 'pay-pacote'),
+        credit('p2', 300, '2026-11-10T15:00:00Z', 'pay-pacote'),
+        refund('e1', 200, '2026-11-20T15:00:00Z', { payment: 'pay-pacote' }),
+      ],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    // 200 × 100/400 = 50 no sem vínculo; 200 × 300/400 = 150 na campanha
+    expect(r.linhas).toEqual([expect.objectContaining({ adId: 'AD-NOV', recebido: 300, estornos: 150, liquido: 150 })]);
+    expect(r.semVinculo).toMatchObject({ recebido: 100, estornos: 50, liquido: 50 });
+    expect(r.porNivel).toEqual({ comprovada: 150, provavel: 0, sem_vinculo: 50 });
+    expect(r.invariante.fecha).toBe(true);
+  });
+
+  it('o mesmo estorno com reversalOfEntryId vai inteiro para a parcela apontada (precisão vence rateio)', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [
+        credit('p1', 100, '2026-10-15T15:00:00Z', 'pay-pacote'),
+        credit('p2', 300, '2026-11-10T15:00:00Z', 'pay-pacote'),
+        refund('e1', 200, '2026-11-20T15:00:00Z', { payment: 'pay-pacote', reversalOfEntryId: 'p2' }),
+      ],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    expect(r.linhas[0]).toMatchObject({ adId: 'AD-NOV', recebido: 300, estornos: 200, liquido: 100 });
+    expect(r.semVinculo).toMatchObject({ recebido: 100, estornos: 0, liquido: 100 });
+  });
+
+  it('parcela recebida DEPOIS do estorno não absorve o estorno', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [
+        credit('p1', 100, '2026-10-15T15:00:00Z', 'pay-pacote'),
+        refund('e1', 40, '2026-10-20T15:00:00Z', { payment: 'pay-pacote' }),
+        credit('p2', 300, '2026-11-10T15:00:00Z', 'pay-pacote'),
+      ],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    expect(r.linhas[0]).toMatchObject({ recebido: 300, estornos: 0, liquido: 300 });
+    expect(r.semVinculo).toMatchObject({ recebido: 100, estornos: 40, liquido: 60 });
+  });
+
+  it('rateio em centavos não perde nem cria dinheiro (sobra fica na parcela mais antiga)', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [
+        credit('p1', 33.33, '2026-10-15T15:00:00Z', 'pay-x'),
+        credit('p2', 66.67, '2026-11-10T15:00:00Z', 'pay-x'),
+        refund('e1', 10.01, '2026-11-20T15:00:00Z', { payment: 'pay-x' }),
+      ],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    const est = r.linhas[0].estornos + r.semVinculo.estornos;
+    expect(Math.round(est * 100)).toBe(1001);
+    expect(r.semVinculo.estornos).toBe(3.34); // 1001 × 3333/10000 = 333,6 → 333 + sobra 1
+    expect(r.linhas[0].estornos).toBe(6.67);
+    expect(r.invariante.fecha).toBe(true);
+  });
+
+  it('períodos diferentes: recebimento em outubro (período 1), estorno em novembro (período 2)', () => {
+    const credOut = credit('c-out', 300, '2026-10-12T15:00:00Z', 'pay-out');
+    const estNov = refund('e-nov', 300, '2026-11-08T15:00:00Z', { payment: 'pay-out' });
+    const conv = { ...campanhaNovembro, eventTime: d('2026-10-05T13:00:00Z') }; // campanha anterior ao recebimento
+    // Período 1 (outubro): só o crédito
+    const out = attributeReceivedRevenue({ ledgerEntries: [credOut], adConversions: [conv], patients: pacientePx });
+    expect(out.linhas[0]).toMatchObject({ adId: 'AD-NOV', recebido: 300, estornos: 0, liquido: 300 });
+    // Período 2 (novembro): só o estorno no período; o crédito vem como referência (como o loader faz)
+    const nov = attributeReceivedRevenue({ ledgerEntries: [estNov], referenceEntries: [credOut], adConversions: [conv], patients: pacientePx });
+    expect(nov.linhas[0]).toMatchObject({ adId: 'AD-NOV', recebido: 0, estornos: 300, liquido: -300 });
+    expect(nov.totalLiquidoLedger).toBe(-300);
+    expect(nov.invariante.fecha).toBe(true);
+    // Os dois períodos somados zeram a campanha
+    expect(out.linhas[0].liquido + nov.linhas[0].liquido).toBe(0);
+  });
+
+  it('crédito do mesmo pagamento que aparece no período E como referência conta uma vez só no rateio', () => {
+    const c1 = credit('p1', 100, '2026-10-15T15:00:00Z', 'pay-pacote');
+    const c2 = credit('p2', 300, '2026-11-10T15:00:00Z', 'pay-pacote');
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [c2, refund('e1', 200, '2026-11-20T15:00:00Z', { payment: 'pay-pacote' })],
+      referenceEntries: [c1, c2],
+      adConversions: [campanhaNovembro], patients: pacientePx,
+    });
+    expect(r.linhas[0]).toMatchObject({ recebido: 300, estornos: 150, liquido: 150 });
+    expect(r.semVinculo).toMatchObject({ estornos: 50, liquido: -50 });
   });
 });

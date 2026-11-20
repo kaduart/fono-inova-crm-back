@@ -96,18 +96,31 @@ basta trocar a lista de `ADMIN_ONLY` em `routes/analytics/attribution.routes.js`
      depois as `LeadAttribution` do telefone do paciente (com e sem o 9), da mais antiga para a mais nova.
    - Data do contato: `AdConversion.eventTime` (momento do agendamento, que vem depois do contato) ou, se for
      anterior, o `firstMessageAt` da `LeadAttribution` do mesmo telefone que seja do **mesmo contato
-     publicitário** (mesmo canal **e** mesmo click id, anúncio ou campanha); para a `LeadAttribution`, o
-     `firstMessageAt`. **Coincidência só de canal não antecipa a data** (Kadu, 20/11): com duas campanhas
+     publicitário**; para a `LeadAttribution`, o `firstMessageAt`.
+   - **Mesmo contato publicitário (`sameTouch`, regra `touch-v2-precedencia`).** Canal diferente nunca é o
+     mesmo contato. No mesmo canal, os identificadores são comparados do mais forte para o mais fraco:
+     click id (`gclid`, `ttclid`, `ctwaClid`, `fbclid`/`fbc`) → anúncio (`adId`) → campanha. O **primeiro
+     nível em que os dois lados têm valor decide**: igual = mesmo contato; diferente = contatos diferentes,
+     mesmo que um nível mais fraco coincida. Assim, `gclid` diferente com o mesmo nome de campanha **não** é o
+     mesmo contato, e o mesmo `gclid` com a campanha renomeada **é**. Se há mais de um click id nos dois
+     lados, todos precisam bater. Sem nenhum identificador presente nos dois lados, não há evidência. **Coincidência só de canal não antecipa a data** (Kadu, 20/11): com duas campanhas
      Google A e B e um pagamento entre os dois contatos, o pagamento fica com A (ou sem vínculo, se não houver
      evidência de A), B recebe zero dele, e o estorno posterior desfaz a atribuição de A.
    - Vale a primeira candidata com contato até o recebimento. Exemplo: pagou em outubro, chegou pela campanha
      em novembro e pagou de novo → só o pagamento de novembro vai para a campanha; o de outubro vai para uma
      origem anterior, se houver, ou para "sem vínculo" com `contato_da_campanha_depois_do_recebimento`.
    - Candidata sem data de contato não prova nada (`origem_sem_data_de_contato`).
-7. **Estorno/reversão desfaz o recebimento original.** O recebimento original é achado por `reversalOfEntryId`
-   ou pelo crédito de caixa do mesmo `payment` (o loader busca no ledger mesmo fora do período). O débito vai
-   para a campanha e o nível **daquele recebimento, na data dele**, nunca para a origem atual do paciente.
-   Sem recebimento original encontrado: "sem vínculo" com `estorno_sem_recebimento_original`.
+7. **Estorno/reversão desfaz o recebimento original (regra `estorno-v2-rateio-por-recebimento`).**
+   - Com `reversalOfEntryId`: vai inteiro para aquele recebimento (precisão vence rateio).
+   - Só com `payment`: vale para os recebimentos (créditos de caixa) daquele pagamento **até a data do
+     estorno** (o loader busca todos, no período ou não). Se todos têm a mesma origem e nível, o estorno vai
+     inteiro para ela. Se divergem (ex.: parcela de outubro antes da campanha e parcela de novembro depois),
+     o estorno é **rateado na proporção do valor de cada recebimento**, em centavos, com a sobra no mais
+     antigo. Exemplo: parcelas de 100 e 300, estorno de 200 → 50 no "sem vínculo" e 150 na campanha.
+   - Parcela recebida depois do estorno não absorve o estorno.
+   - Estornos parciais somam: 300 recebidos, estornos de 100 e 50 → líquido 150 na mesma campanha.
+   - O débito usa a campanha e o nível **do recebimento, na data dele**, nunca a origem atual do paciente.
+   - Sem recebimento original encontrado: "sem vínculo" com `estorno_sem_recebimento_original`.
 8. **Nível de evidência:**
    - `comprovada`: click id (`gclid`/`fbc`/`ttclid`/`ctwaClid`) ou método `ctwa`/`site_signature`/`token`, num telefone de **um só** paciente;
    - `provavel`: sinal forte num telefone usado por mais de um paciente, ou só palavra-chave, manual, lead ou método desconhecido;
@@ -121,6 +134,12 @@ basta trocar a lista de `ADMIN_ONLY` em `routes/analytics/attribution.routes.js`
    `comprovada`.
 9. **Invariante:** `comprovada + provavel + sem_vinculo = totalLiquidoLedger`. Cálculo em centavos inteiros.
 10. **Período por caixa:** um estorno conta no período em que aconteceu (`occurredAt` do estorno), mesmo que o pagamento seja de outro mês.
+    Exemplo: recebeu 300 em outubro e estornou em novembro → relatório de outubro +300 na campanha, de
+    novembro −300 na mesma campanha; somados, zero.
+11. **Modelo e versões.** O resultado traz `regras: { modelo, contato, estorno }`. Modelo atual:
+    `primeiro-contato-por-recebimento-v1` (primeiro contato válido na data de cada recebimento). Outros
+    modelos (último contato, linear) entram como versão nova, escolhida pelo parâmetro `modelo`, sem mudar o
+    resultado desta; modelo desconhecido é recusado.
 
 ## Consultas do loader (todas por índice)
 
