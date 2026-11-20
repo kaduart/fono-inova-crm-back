@@ -5,6 +5,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import AdConversion from '../models/AdConversion.js';
+import Appointment from '../models/Appointment.js';
 
 const router = express.Router();
 
@@ -29,13 +30,40 @@ function basicAuth(req, res, next) {
 const fmt = (d) => new Date(new Date(d).getTime() - 3 * 3600e3).toISOString().replace('T', ' ').slice(0, 19);
 const csvCell = (v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
 
+// Correção 4 (20/11): com ADS_FEED_SKIP_CANCELED=on, uma linha cujo agendamento foi cancelado
+// ANTES de ela ter saído no arquivo deixa de sair. A que já saiu continua (o Google pode ter
+// importado; desfazer exige ajuste de conversão, fora daqui). Desligado (padrão): regra do
+// contrato §2 como hoje, o cancelado continua no arquivo.
+export function skipCanceledEnabled(env = process.env) {
+  return String(env.ADS_FEED_SKIP_CANCELED || '').trim().toLowerCase() === 'on';
+}
+export function feedRows(rows, canceledAppointments = new Set(), skipCanceled = false) {
+  if (!skipCanceled) return rows;
+  return rows.filter((r) => r.googleCsvFirstServedAt || !canceledAppointments.has(String(r.appointment)));
+}
+
 router.get('/google-offline.csv', basicAuth, async (req, res) => {
   try {
     const name = process.env.GOOGLE_ADS_CONVERSION_NAME || 'Avaliação agendada';
-    const rows = await AdConversion.find({
+    let rows = await AdConversion.find({
       gclid: { $nin: [null, ''] },
       eventTime: { $gte: new Date(Date.now() - 60 * 864e5) }, // Google aceita até 90 dias após o clique
-    }).select('appointment gclid eventTime value').sort({ eventTime: 1 }).lean();
+    }).select('_id appointment gclid eventTime value googleCsvFirstServedAt').sort({ eventTime: 1 }).lean();
+    const skip = skipCanceledEnabled();
+    let canceled = new Set();
+    if (skip && rows.length) {
+      const notServed = rows.filter((r) => !r.googleCsvFirstServedAt).map((r) => r.appointment);
+      const found = notServed.length
+        ? await Appointment.find({ _id: { $in: notServed }, operationalStatus: 'canceled' }).select('_id').lean()
+        : [];
+      canceled = new Set(found.map((a) => String(a._id)));
+    }
+    rows = feedRows(rows, canceled, skip);
+    // Marca a 1ª vez que cada linha sai (aditivo; não muda o arquivo).
+    const firstServed = rows.filter((r) => !r.googleCsvFirstServedAt).map((r) => r._id);
+    if (firstServed.length) {
+      await AdConversion.updateMany({ _id: { $in: firstServed }, googleCsvFirstServedAt: null }, { $set: { googleCsvFirstServedAt: new Date() } });
+    }
 
     // Sem conversão real o arquivo ficaria só com cabeçalho e o Google falha (erro 4000: exige ≥1 linha para
     // detectar o esquema). Linha de exemplo com gclid inválido: o Google a descarta; some quando houver conversão real.

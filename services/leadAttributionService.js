@@ -6,6 +6,19 @@ import { normalizeE164BR } from '../utils/phone.js';
 import { parseAttribution, toLeadTrackingSource } from '../utils/attributionParser.js';
 
 const TAG = '[LeadAttribution]';
+export const MAX_TOUCHES = 20;
+
+/** Um toque do histórico: só o que identifica a origem (sem click id, sem texto). */
+export function touchOf(parsed = {}, at = new Date()) {
+  return {
+    at,
+    source: parsed.source || null,
+    method: parsed.method || null,
+    confidence: parsed.confidence || null,
+    campaign: parsed.campaign || null,
+    temClique: Boolean(parsed.gclid || parsed.fbclid || parsed.ttclid || parsed.ctwaClid),
+  };
+}
 
 /**
  * Chamado a cada mensagem RECEBIDA no WhatsApp. Barato quando não há sinal de origem.
@@ -31,6 +44,13 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
       { upsert: true }
     );
     const created = res.upsertedCount > 0;
+
+    // Correção 7 (20/11): registra o toque no histórico (últimos 20), sem trocar a origem.
+    const touch = touchOf(parsed);
+    await LeadAttribution.updateOne(
+      { phone: normalized },
+      { $push: { touches: { $each: [touch], $slice: -MAX_TOUCHES } }, $set: { lastTouchAt: touch.at } }
+    );
 
     // Sinal forte substitui sinal fraco (keyword) — nunca o contrário
     if (!created && parsed.confidence === 'high') {

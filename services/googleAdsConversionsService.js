@@ -90,18 +90,31 @@ export async function uploadOfflineConversion({ gclid, value, currency = 'BRL', 
       }],
     });
 
-    const pfe = res?.partial_failure_error;
-    if (pfe && (pfe.code || pfe.message)) {
-      const msg = String(pfe.message || pfe.code);
-      // Erros de dado (gclid inválido/expirado/duplicado) não adiantam repetir
-      const permanent = /UNPARSEABLE_GCLID|EXPIRED|CLICK_NOT_FOUND|DUPLICATE|ORDER_ID_ALREADY_IN_USE|INVALID_CONVERSION_ACTION|CONVERSION_PRECEDES/i.test(msg);
-      return { status: 'failed', reason: msg.slice(0, 300), retryable: !permanent };
-    }
-    return { status: 'sent' };
+    return interpretUploadResponse(res);
   } catch (err) {
     const msg = err?.errors?.[0]?.message || err?.message || String(err);
     return { status: 'failed', reason: String(msg).slice(0, 300), retryable: true };
   }
 }
 
-export default { uploadOfflineConversion, resolveConversionAction };
+const OTHER_PERMANENT = /UNPARSEABLE_GCLID|EXPIRED|CLICK_NOT_FOUND|DUPLICATE|INVALID_CONVERSION_ACTION|CONVERSION_PRECEDES/i;
+
+/**
+ * Interpreta a resposta do uploadClickConversions (1 conversão por chamada).
+ * Correção 6 (20/11): ORDER_ID_ALREADY_IN_USE quer dizer que o MESMO order_id já entrou no
+ * Google (normalmente pelo google-offline.csv). A conversão está lá: é `sent`, não falha.
+ * Só vale quando esse é o único erro; qualquer outro erro junto segue como antes.
+ */
+export function interpretUploadResponse(res) {
+  const pfe = res?.partial_failure_error;
+  if (!pfe || !(pfe.code || pfe.message)) return { status: 'sent' };
+  const msg = String(pfe.message || pfe.code);
+  if (/ORDER_ID_ALREADY_IN_USE/i.test(msg) && !OTHER_PERMANENT.test(msg.replace(/ORDER_ID_ALREADY_IN_USE/gi, ''))) {
+    return { status: 'sent', reason: 'ja_importado_pelo_csv' };
+  }
+  // Erros de dado (gclid inválido/expirado/duplicado) não adiantam repetir
+  const permanent = OTHER_PERMANENT.test(msg) || /ORDER_ID_ALREADY_IN_USE/i.test(msg);
+  return { status: 'failed', reason: msg.slice(0, 300), retryable: !permanent };
+}
+
+export default { uploadOfflineConversion, resolveConversionAction, interpretUploadResponse };

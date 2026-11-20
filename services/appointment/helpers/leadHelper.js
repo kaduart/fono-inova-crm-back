@@ -158,12 +158,25 @@ export async function buildLeadSnapshot(leadId, mongoSession = null) {
   if (mongoSession) query.session(mongoSession);
   const leadDoc = await query;
   if (!leadDoc) return null;
+  return snapshotFromLead(leadDoc);
+}
+
+/**
+ * Correção 1 da auditoria de Attribution (20/11): o Lead não tem `source` nem `campaign` no
+ * topo; a origem do anúncio fica em `metaTracking`. Antes o snapshot saía sem campanha.
+ * Aditivo: `origin` e os demais campos continuam iguais; gclid/adId/ctwaClid são opcionais.
+ */
+export function snapshotFromLead(leadDoc = {}) {
+  const mt = leadDoc.metaTracking || {};
   return {
-    source: leadDoc.source || leadDoc.origin || null,
-    campaign: leadDoc.campaign || null,
+    source: mt.source || leadDoc.origin || null,
+    campaign: mt.campaign || null,
     origin: leadDoc.origin || null,
     conversionScore: leadDoc.conversionScore || null,
     capturedAt: leadDoc.createdAt || null,
+    gclid: mt.gclid || null,
+    adId: mt.adId || null,
+    ctwaClid: mt.ctwaClid || null,
   };
 }
 
@@ -171,4 +184,5 @@ export default {
   ensureLeadForAppointment,
   markLeadScheduled,
   buildLeadSnapshot,
+  snapshotFromLead,
 };

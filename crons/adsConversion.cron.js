@@ -25,12 +25,14 @@ import { getAttributionByPhone, getAttributionsByPhones, findGclidForConversion 
 import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
 import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
 import { sendEventToTikTok } from '../services/tiktokConversionsService.js';
+import { phoneFormatsOf } from '../services/attribution/revenueAttribution.js';
 import {
   resolveMainPhone, decidePlatforms,
   isConversionCandidate, conversionStatusFilter, isPreAgendamentoEnabled,
   interpretMetaResponse, interpretTiktokResponse, buildFbc,
   resolveConversionTime, shouldAcquire, eventIdFor, buildPendingClaim,
   unknownReasonFor, metaSendOptions, shouldReopenMetaForClid,
+  sharedPhoneGuardEnabled, attributionEvidenceOf, withoutClickIds,
 } from './adsConversion.logic.js';
 
 const TAG = '[AdsConversion]';
@@ -77,6 +79,16 @@ async function resolvePhone(appt) {
     patientPhone = p?.phone || null;
   }
   return resolveMainPhone({ patientInfoPhone: appt.patientInfo?.phone, patientPhone });
+}
+
+// Correção 3: o telefone já é de OUTRO paciente com aquisição? Consultas com índice:
+// Patient.phone (todas as grafias) e AdConversion (índice parcial 1 aquisição por paciente).
+async function phoneHasOtherAcquisition(phone, patientId) {
+  if (!phone) return false;
+  const others = await Patient.find({ phone: { $in: phoneFormatsOf(phone) }, ...(patientId ? { _id: { $ne: patientId } } : {}) })
+    .select('_id').limit(20).lean();
+  if (!others.length) return false;
+  return Boolean(await AdConversion.exists({ patient: { $in: others.map((o) => o._id), $type: 'objectId' }, isAcquisition: true }));
 }
 
 // 18/11: a atribuição por telefone devolve a 1ª origem (first-touch), que muitas vezes não tem
@@ -140,7 +152,11 @@ async function enqueueNew() {
       // histórico p/ status booked); sem evidência, cai para createdAt. Nunca updatedAt genérico.
       // 19/11: pré-agendamento real converte na criação (createdAt), não na confirmação.
       const eventTime = resolveConversionTime(appt, { includePreAgendamento });
-      const d = decidePlatforms({ first, phone, attr, eventTimeMs: eventTime.getTime() });
+      let d = decidePlatforms({ first, phone, attr, eventTimeMs: eventTime.getTime() });
+      const shared = d.isAcquisition ? await phoneHasOtherAcquisition(phone, appt.patient) : false;
+      if (shared && sharedPhoneGuardEnabled()) {
+        d = withoutClickIds({ first, phone, attr, eventTimeMs: eventTime.getTime() });
+      }
       const doc = {
         appointment: appt._id,
         patient: appt.patient || null,   // #3 dedupe por paciente (índice parcial único no DB)
@@ -157,6 +173,9 @@ async function enqueueNew() {
         fbc: d.fbc,
         ttclid: d.ttclid,
         ctwaClid: d.ctwaClid || null,
+        attributionEvidence: d.isAcquisition
+          ? attributionEvidenceOf({ source: attr?.source, method: attr?.method, gclid: d.gclid, fbc: d.fbc, ttclid: d.ttclid, ctwaClid: d.ctwaClid, shared })
+          : null,
         meta: d.meta,
         google: d.google,
         tiktok: d.tiktok,
@@ -194,7 +213,7 @@ async function refreshUnknownSources() {
     source: 'unknown',
     phone: { $ne: null },
     createdAt: { $gte: since },
-  }).select('_id phone isAcquisition meta eventTime unknownReason').limit(300).lean();
+  }).select('_id phone patient isAcquisition meta eventTime unknownReason').limit(300).lean();
 
   if (!unknown.length) return 0;
 
@@ -213,7 +232,9 @@ async function refreshUnknownSources() {
       }
       // 18/11: identificadores de clique só na AQUISIÇÃO. O google-offline.csv lista toda AdConversion
       // com gclid, então gravar gclid em retorno de paciente antigo criaria conversão falsa no Google.
-      const ids = u.isAcquisition ? {
+      const shared = u.isAcquisition ? await phoneHasOtherAcquisition(u.phone, u.patient) : false;
+      const guard = shared && sharedPhoneGuardEnabled();
+      const ids = u.isAcquisition && !guard ? {
         ...(attr.gclid ? { gclid: attr.gclid } : {}),
         ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}),
         ...(attr.ttclid ? { ttclid: attr.ttclid } : {}),
@@ -221,7 +242,8 @@ async function refreshUnknownSources() {
       } : {};
       const res = await AdConversion.updateOne(
         { _id: u._id, source: 'unknown' },
-        { $set: { source: attr.source, unknownReason: null, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...ids } }
+        { $set: { source: attr.source, unknownReason: null, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...ids,
+          attributionEvidence: u.isAcquisition ? attributionEvidenceOf({ source: attr.source, method: attr.method, ...ids, shared }) : null } }
       );
       updated += res.modifiedCount || 0;
 
@@ -504,5 +526,5 @@ export function initAdsConversionCron() {
   return { stop: () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } } };
 }
 
-export { runOnce as runAdsConversionOnce, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, fillMissingCtwaClid, fillPhoneForNonAcquisition, isAcquisitionAppointment, resolvePhone };
+export { runOnce as runAdsConversionOnce, phoneHasOtherAcquisition, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, fillMissingCtwaClid, fillPhoneForNonAcquisition, isAcquisitionAppointment, resolvePhone };
 export default { initAdsConversionCron };

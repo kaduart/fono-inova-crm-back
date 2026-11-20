@@ -235,3 +235,34 @@ export function buildPendingClaim(now = Date.now(), leaseMs = 5 * 60 * 1000) {
     options: { sort: { createdAt: 1 }, new: true },
   };
 }
+
+// ─── Correção 3 (20/11): telefone usado por mais de um paciente ───────────────
+// O clique de um anúncio é da PESSOA que clicou. Se o telefone já tem a aquisição de OUTRO
+// paciente (irmãos, mãe com dois filhos), copiar o gclid/fbc/ttclid/ctwaClid para o 2º paciente
+// manda o mesmo clique duas vezes. Com ADS_SHARED_PHONE_GUARD=on, a 2ª aquisição é gravada sem
+// identificador de clique; o envio ao Google fica "skipped" com motivo telefone_compartilhado.
+// Desligado (padrão), nada muda no que é enviado: só o nível de evidência é gravado.
+export const STRONG_ATTRIBUTION_METHODS = Object.freeze(['ctwa', 'site_signature', 'token']);
+
+export function sharedPhoneGuardEnabled(env = process.env) {
+  return String(env.ADS_SHARED_PHONE_GUARD || '').trim().toLowerCase() === 'on';
+}
+
+// Mesmo critério da receita por campanha (services/attribution/revenueAttribution.js).
+export function attributionEvidenceOf({ source, method, gclid, fbc, ttclid, ctwaClid, shared }) {
+  if (!source || source === 'unknown') return 'sem_vinculo';
+  const strong = Boolean(gclid || fbc || ttclid || ctwaClid) || STRONG_ATTRIBUTION_METHODS.includes(method);
+  return strong && !shared ? 'comprovada' : 'provavel';
+}
+
+// Recalcula os destinos sem os identificadores de clique (puro). Só para aquisição.
+export function withoutClickIds(args) {
+  const attr = { ...(args.attr || {}), gclid: null, fbclid: null, fbc: null, ttclid: null, ctwaClid: null };
+  const d = decidePlatforms({ ...args, attr });
+  const reason = 'telefone_compartilhado';
+  const google = d.google.status === 'skipped' && d.google.reason === 'sem_gclid' ? { status: 'skipped', reason } : d.google;
+  const tiktok = d.tiktok.status === 'skipped' && d.tiktok.reason === 'sem_identificador' ? { status: 'skipped', reason } : d.tiktok;
+  const meta = d.meta.status === 'skipped' && d.meta.reason === 'sem_telefone' ? { status: 'skipped', reason } : d.meta;
+  const done = meta.status !== 'pending' && google.status !== 'pending' && tiktok.status !== 'pending';
+  return { ...d, meta, google, tiktok, done, gclid: null, fbc: null, ttclid: null, ctwaClid: null };
+}
