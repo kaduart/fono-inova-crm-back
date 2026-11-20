@@ -49,19 +49,44 @@ export function checkMetaNotification(rawBody, headers = {}, env = process.env) 
   return { accept: policy !== 'on', policy, reason: r.reason };
 }
 
+// Contagem desde que o processo subiu, por resultado (assinatura_ok, sem_assinatura,
+// assinatura_invalida...). Só números: nada de corpo, assinatura ou segredo.
+const signatureStats = { total: 0, porResultado: {}, ultimaValidaEm: null };
+export function getMetaSignatureStats() {
+  return { ...signatureStats, porResultado: { ...signatureStats.porResultado } };
+}
+export function resetMetaSignatureStats() {
+  signatureStats.total = 0;
+  signatureStats.porResultado = {};
+  signatureStats.ultimaValidaEm = null;
+}
+function count(reason, now) {
+  signatureStats.total += 1;
+  signatureStats.porResultado[reason] = (signatureStats.porResultado[reason] || 0) + 1;
+  if (reason === 'assinatura_ok') signatureStats.ultimaValidaEm = now.toISOString();
+}
+
 // Middleware do POST: recebe o corpo CRU (express.raw), confere a assinatura ANTES de criar
 // lead ou enfileirar qualquer coisa, e só então transforma o corpo em JSON (req.body).
-// Nunca registra a assinatura, o segredo nem o corpo.
-export function metaNotificationGuard({ env = process.env, log = console } = {}) {
+// Toda notificação deixa UMA linha de log com o resultado e a contagem (inclusive o
+// sucesso, para dar para confirmar que um lead real passou pela verificação antes de ligar
+// META_LEAD_SIGNATURE=on). Nunca registra a assinatura, o segredo nem o corpo.
+export function metaNotificationGuard({ env = process.env, log = console, now = () => new Date() } = {}) {
   return (req, res, next) => {
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
     const check = checkMetaNotification(raw, req.headers || {}, env);
+    count(check.reason, now());
+    const n = signatureStats.porResultado[check.reason];
     if (!check.accept) {
-      log.warn?.(`[META-LEADS] 🚫 notificação recusada: ${check.reason}`);
+      log.warn?.(`[META-LEADS] 🚫 notificação recusada: ${check.reason} (${n} desde o início; política ${check.policy})`);
       return res.sendStatus(403);
     }
-    if (check.reason !== 'assinatura_ok' && check.policy === 'log') {
-      log.warn?.(`[META-LEADS] ⚠️ notificação sem assinatura válida (${check.reason}); aceita porque META_LEAD_SIGNATURE=log`);
+    if (check.reason === 'assinatura_ok') {
+      log.info?.(`[META-LEADS] ✅ assinatura_ok (${n} válidas desde o início; política ${check.policy})`);
+    } else if (check.policy === 'log') {
+      log.warn?.(`[META-LEADS] ⚠️ notificação sem assinatura válida: ${check.reason} (${n} desde o início); aceita porque META_LEAD_SIGNATURE=log`);
+    } else {
+      log.info?.(`[META-LEADS] notificação aceita sem conferir assinatura (META_LEAD_SIGNATURE=off)`);
     }
     try {
       req.body = raw.length ? JSON.parse(raw.toString('utf8')) : {};

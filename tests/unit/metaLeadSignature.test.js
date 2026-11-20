@@ -4,7 +4,7 @@
  */
 import crypto from 'node:crypto';
 import { describe, it, expect, vi } from 'vitest';
-import { verifyMetaSignature, metaSignaturePolicy, checkMetaNotification, metaNotificationGuard } from '../../utils/metaWebhookVerify.js';
+import { verifyMetaSignature, metaSignaturePolicy, checkMetaNotification, metaNotificationGuard, getMetaSignatureStats, resetMetaSignatureStats } from '../../utils/metaWebhookVerify.js';
 
 const SECRET = 'segredo-ficticio-de-teste';
 const body = Buffer.from(JSON.stringify({ entry: [{ changes: [{ value: { leadgen_id: 'L1', field_data: [] } }] }] }));
@@ -46,7 +46,7 @@ describe('metaNotificationGuard', () => {
     const req = { body: raw, headers };
     const res = { sendStatus: vi.fn(() => res) };
     const next = vi.fn();
-    const log = { warn: vi.fn() };
+    const log = { warn: vi.fn(), info: vi.fn() };
     metaNotificationGuard({ env, log })(req, res, next);
     return { req, res, next, log };
   };
@@ -73,5 +73,44 @@ describe('metaNotificationGuard', () => {
     const b = run(on, { 'x-hub-signature-256': sign(bad) }, bad);
     expect(b.res.sendStatus).toHaveBeenCalledWith(400);
     expect(b.next).not.toHaveBeenCalled();
+  });
+});
+
+describe('registro de sucesso e contagem (antes de ligar on)', () => {
+  const on = { META_LEAD_SIGNATURE: 'on', META_APP_SECRET: SECRET };
+  const logMode = { META_APP_SECRET: SECRET };
+  const call = (env, headers, log) => {
+    const res = { sendStatus: vi.fn(() => res) };
+    const next = vi.fn();
+    metaNotificationGuard({ env, log, now: () => new Date('2026-11-21T12:00:00Z') })({ body: body, headers }, res, next);
+    return { res, next };
+  };
+
+  it('assinatura válida deixa uma linha de sucesso com a contagem, sem corpo, assinatura nem segredo', () => {
+    resetMetaSignatureStats();
+    const log = { warn: vi.fn(), info: vi.fn() };
+    const sig = sign(body);
+    call(logMode, { 'x-hub-signature-256': sig }, log);
+    call(logMode, { 'x-hub-signature-256': sig }, log);
+    expect(log.warn).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledTimes(2);
+    expect(log.info.mock.calls[1][0]).toContain('assinatura_ok (2 válidas desde o início; política log)');
+    const all = [...log.info.mock.calls, ...log.warn.mock.calls].flat().join(' ');
+    for (const secretish of [SECRET, sig, sig.slice(7), 'L1', 'leadgen']) expect(all).not.toContain(secretish);
+    expect(getMetaSignatureStats()).toEqual({ total: 2, porResultado: { assinatura_ok: 2 }, ultimaValidaEm: '2026-11-21T12:00:00.000Z' });
+  });
+
+  it('conta separado o que falha: dá para distinguir "nenhum lead chegou" de "todos válidos"', () => {
+    resetMetaSignatureStats();
+    const log = { warn: vi.fn(), info: vi.fn() };
+    expect(getMetaSignatureStats()).toEqual({ total: 0, porResultado: {}, ultimaValidaEm: null });
+    call(logMode, {}, log);
+    call(on, { 'x-hub-signature-256': sign(body, 'outro') }, log);
+    call(on, { 'x-hub-signature-256': sign(body) }, log);
+    expect(getMetaSignatureStats()).toMatchObject({ total: 3, porResultado: { sem_assinatura: 1, assinatura_invalida: 1, assinatura_ok: 1 } });
+    expect(log.warn.mock.calls.map((c) => c[0])).toEqual([
+      expect.stringContaining('sem_assinatura (1 desde o início)'),
+      expect.stringContaining('recusada: assinatura_invalida (1 desde o início; política on)'),
+    ]);
   });
 });
