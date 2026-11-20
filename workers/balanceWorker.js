@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ, getQueue } from '../infrastructure/queue/queueConfig.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
+import { quarantineBalanceEvent } from '../models/BalanceEventQuarantine.js';
 import { runPaymentOperation, operationKeyFor, markSideEffectsDone } from '../services/paymentOperations.js';
 
 
@@ -33,18 +34,7 @@ export function startBalanceWorker() {
         }
         
         try {
-            let result;
-            
-            switch (eventType) {
-                case 'BALANCE_DEBIT_REQUESTED':
-                    result = await handleDebit(payload, eventId);
-                    break;
-                case 'BALANCE_CREDIT_REQUESTED':
-                    result = await handleCredit(payload, eventId);
-                    break;
-                default:
-                    result = await handleLegacy(payload, eventId);
-            }
+            const result = await handleBalanceEvent(eventType, payload, eventId);
             
             processedEvents.set(eventId, Date.now());
             return result;
@@ -75,6 +65,55 @@ export function startBalanceWorker() {
     
     console.log('[BalanceWorker] Worker iniciado');
     return worker;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTRATO DO CONSUMIDOR DE SALDO (fila balance-update)
+//
+// Produtores reais encontrados no código (inventário de 19/11/2026):
+//   BALANCE_DEBIT_REQUESTED   ← routes/balance.v2.js  (débito manual/fiado)  → handleDebit
+//   BALANCE_CREDIT_REQUESTED  ← routes/balance.v2.js  (crédito direto)       → handleCredit
+//   PAYMENT_UPDATED           ← routes/payment.v2.js  (PATCH /v2/payments/:id)
+//   PAYMENT_RECEIVED          ← workers/paymentWorker.js
+//   INSURANCE_PAYMENT_AUTO_SETTLED ← services/autoInsuranceSettlementService.js (Outbox)
+//   BALANCE_UPDATE_REQUESTED, PAYMENT_REFUNDED, PAYMENT_DELETED: roteados, sem produtor.
+//
+// Onde o saldo muda de verdade em cada fluxo legítimo:
+//   débito ......... BALANCE_DEBIT_REQUESTED (aqui)
+//   crédito ........ BALANCE_CREDIT_REQUESTED (aqui)
+//   baixa .......... transitionPaymentStatus(reconcilePatientBalance) na transação do PATCH
+//   estorno ........ paymentStatusService (ledger) na transação do PATCH
+//   ajuste de valor  adjustOpenDebitForPaymentAmount na transação do PATCH
+// Por isso PAYMENT_UPDATED não move saldo aqui: o ajuste já foi feito, uma vez, junto com a
+// edição. Antes, todo tipo fora de débito/crédito caía num caminho legado que lançava o valor
+// cheio do payload como débito (edição de pagamento, liquidação de convênio sem paciente).
+//
+// Fora do contrato (tipo desconhecido, PAYMENT_UPDATED no formato antigo, os demais tipos
+// roteados): NÃO altera saldo e NÃO some — vai para balance_event_quarantine com diagnóstico.
+// ─────────────────────────────────────────────────────────────────────────────
+export const PAYMENT_UPDATED_CONTRACT_VERSION = 2;
+
+export async function handleBalanceEvent(eventType, payload, eventId) {
+    switch (eventType) {
+        case 'BALANCE_DEBIT_REQUESTED':
+            return handleDebit(payload, eventId);
+        case 'BALANCE_CREDIT_REQUESTED':
+            return handleCredit(payload, eventId);
+        case 'PAYMENT_UPDATED':
+            if (payload?.balanceContract === PAYMENT_UPDATED_CONTRACT_VERSION) {
+                console.log(`[BalanceWorker] PAYMENT_UPDATED ${eventId}: saldo já ajustado na transação da edição (${(payload.changedFields || []).join(',') || 'sem campos'})`);
+                return { status: 'no_balance_effect', reason: 'ajustado_na_transacao_da_edicao', eventId, eventType };
+            }
+            return quarantine(eventType, payload, eventId, 'payment_updated_sem_contrato');
+        default:
+            return quarantine(eventType, payload, eventId, 'tipo_fora_do_contrato');
+    }
+}
+
+async function quarantine(eventType, payload, eventId, reason) {
+    await quarantineBalanceEvent({ source: 'balance-update', eventId, eventType, reason, payload });
+    console.warn(`[BalanceWorker] ${eventType} ${eventId} fora do contrato (${reason}): saldo não alterado, preservado em balance_event_quarantine`);
+    return { status: 'quarantined', reason, eventId, eventType };
 }
 
 // exportado só pra teste unitário direto do handler (sem subir BullMQ/Redis)
@@ -276,40 +315,4 @@ export async function handleCredit(payload, eventId) {
     }
 
     return { status: op.applied ? 'success' : 'already_processed', eventId, patientId, amount: value, operationKey };
-}
-
-async function handleLegacy(payload, eventId) {
-    const { patientId, amount, description, sessionId, appointmentId, registeredBy } = payload;
-
-    await PatientBalance.updateOne(
-        { patient: patientId },
-        {
-            $inc: {
-                currentBalance: amount,
-                totalDebited: amount > 0 ? amount : 0,
-                totalCredited: amount < 0 ? Math.abs(amount) : 0
-            },
-            $push: {
-                transactions: {
-                    type: amount > 0 ? 'debit' : 'credit',
-                    amount: Math.abs(amount),
-                    description,
-                    sessionId,
-                    appointmentId,
-                    registeredBy,
-                    transactionDate: new Date()
-                }
-            },
-            $set: { lastTransactionAt: new Date() }
-        },
-        { upsert: true }
-    );
-
-    await getQueue('patient-projection').add('rebuild', {
-        eventType: 'BALANCE_UPDATED',
-        payload: { patientId },
-        correlationId: eventId
-    });
-
-    return { status: 'success', eventId, patientId, amount };
 }

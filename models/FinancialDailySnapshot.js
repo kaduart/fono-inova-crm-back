@@ -132,6 +132,7 @@ const FinancialDailySnapshotSchema = new mongoose.Schema({
   // 🔍 Contribuições individuais (para rebuild determinístico e reversão)
   contributions: [{
     eventId:      { type: String, required: true },
+    sourceEventId:{ type: String, default: null }, // eventId do Outbox quando a chave é natural (ex.: session_completed:<id>)
     eventType:    { type: String, required: true },
     paymentId:    { type: mongoose.Schema.Types.ObjectId },
     sessionId:    { type: mongoose.Schema.Types.ObjectId },

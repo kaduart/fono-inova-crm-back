@@ -82,18 +82,10 @@ async function applySnapshotOperation({ dateStr, clinicId = 'default', eventId, 
     return;
   }
 
-  // 1. Verifica idempotência
-  const exists = await FinancialDailySnapshot.findOne(
-    { date: dateStr, clinicId, processedEvents: eventId },
-    { _id: 1 }
-  ).lean();
-
-  if (exists) {
-    log.info('snapshot_already_processed', 'Evento já aplicado', { dateStr, eventId });
-    return;
-  }
-
-  // 2. Monta o update com contribution
+  // Idempotência ATÔMICA: o filtro só casa se o evento ainda não está em
+  // processedEvents, então checar e aplicar é uma operação só. Antes era
+  // findOne + findOneAndUpdate separados: duas entregas simultâneas do mesmo
+  // evento passavam as duas pela checagem e somavam duas vezes.
   const update = {
     $set: { updatedAt: new Date(), lastEventAt: new Date() },
     $addToSet: { processedEvents: eventId },
@@ -104,13 +96,25 @@ async function applySnapshotOperation({ dateStr, clinicId = 'default', eventId, 
     update.$inc = operation.$inc;
   }
 
+  const filter = { date: dateStr, clinicId, processedEvents: { $ne: eventId } };
   try {
-    await FinancialDailySnapshot.findOneAndUpdate(
-      { date: dateStr, clinicId },
-      update,
-      { upsert: true, new: true }
-    );
+    let doc;
+    try {
+      doc = await FinancialDailySnapshot.findOneAndUpdate(filter, update, { upsert: true, new: true });
+    } catch (err) {
+      // E11000 no índice único {clinicId, date}: ou o documento do dia já tem
+      // este evento (o filtro não casou e o upsert tentou inserir outro), ou
+      // outro evento criou o documento ao mesmo tempo. Tenta de novo sem
+      // upsert: se não casar, o evento já foi aplicado.
+      if (err?.code !== 11000) throw err;
+      doc = await FinancialDailySnapshot.findOneAndUpdate(filter, update, { new: true });
+    }
+    if (!doc) {
+      log.info('snapshot_already_processed', 'Evento já aplicado', { dateStr, eventId });
+      return { applied: false };
+    }
     log.info('snapshot_updated', 'Snapshot atualizado', { dateStr, eventId, eventType, ...operation.meta });
+    return { applied: true };
   } catch (err) {
     log.error('snapshot_update_failed', err.message, { dateStr, clinicId, eventId, operation });
     throw err;
@@ -186,12 +190,16 @@ export async function onPaymentStatusChanged(payload) {
     $inc['payments.received'] = -value;
   }
 
+  // Sem eventId não há chave estável (o mesmo pagamento pode entrar e sair do
+  // caixa mais de uma vez); a chave é calculada UMA vez para que
+  // processedEvents e contribution fiquem iguais.
+  const opKey = eventId || `psc_${paymentId}_${Date.now()}`;
   await applySnapshotOperation(
-    { dateStr, eventId: eventId || `psc_${paymentId}_${Date.now()}`, eventType: EventTypes.PAYMENT_STATUS_CHANGED },
+    { dateStr, eventId: opKey, eventType: EventTypes.PAYMENT_STATUS_CHANGED },
     {
       $inc,
       contribution: {
-        eventId: eventId || `psc_${paymentId}_${Date.now()}`,
+        eventId: opKey,
         eventType: EventTypes.PAYMENT_STATUS_CHANGED,
         paymentId,
         category: 'cash',
@@ -238,8 +246,14 @@ export async function onSessionCompleted(payload) {
   const productionField = `production.byBusinessType.${billingType}.total`;
   const productionCount = `production.byBusinessType.${billingType}.count`;
 
+  // Chave ESTÁVEL por sessão: a produção de uma sessão conta uma vez no dia,
+  // venha o evento com eventId, sem eventId (sessionWorker repassa só o
+  // payload) ou reentregue por outro caminho com outro eventId. Antes era
+  // `sc_${sessionId}_${Date.now()}`, diferente a cada entrega: toda
+  // reentrega somava a produção de novo.
+  const opKey = `session_completed:${sessionId}`;
   await applySnapshotOperation(
-    { dateStr, eventId: eventId || `sc_${sessionId}_${Date.now()}`, eventType: EventTypes.SESSION_COMPLETED },
+    { dateStr, eventId: opKey, eventType: EventTypes.SESSION_COMPLETED },
     {
       $inc: {
         'production.total': value,
@@ -248,7 +262,8 @@ export async function onSessionCompleted(payload) {
         [productionCount]: 1,
       },
       contribution: {
-        eventId: eventId || `sc_${sessionId}_${Date.now()}`,
+        eventId: opKey,
+        sourceEventId: eventId || null,
         eventType: EventTypes.SESSION_COMPLETED,
         sessionId,
         category: 'production',

@@ -140,6 +140,7 @@ jobs:
           REDIS_URL: redis://127.0.0.1:6379
         run: |
           npm run test:recebimento-idempotente
+          npm run test:recuperacao-outbox-idempotencia
           npm run test:pagamentos-rotas-paralelas
           npm run test:reaper-posse-compartilhada
       - name: Proteção contra reenvio de WhatsApp/e-mail (node:test, provedor simulado)
