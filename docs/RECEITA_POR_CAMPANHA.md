@@ -5,7 +5,7 @@ Somente leitura. Nenhuma rota ou função daqui grava no banco nem chama Meta, G
 - Núcleo puro: `services/attribution/revenueAttribution.js` (`attributeReceivedRevenue`)
 - Loader (só `find().select().lean()`): `loadRevenueAttribution` no mesmo arquivo
 - Saúde da integração: `services/attribution/attributionHealth.js`
-- Rotas: `routes/analytics/attribution.routes.js`, montadas em `/api/v2/analytics` com `flexibleAuth` (a mesma auth das rotas de ROI)
+- Rotas: `routes/analytics/attribution.routes.js`, montadas em `/api/v2/analytics`, **só admin** (ver Acesso)
 - Amostra fictícia: `services/attribution/fixtures/receitaFicticia.js`
 
 ## Contrato
@@ -17,26 +17,27 @@ Somente leitura. Nenhuma rota ou função daqui grava no banco nem chama Meta, G
 | `from` (alias `startDate`) | não | início do dia em America/Sao_Paulo (-03:00). Sem ele: 30 dias atrás |
 | `to` (alias `endDate`) | não | fim do dia em -03:00. Sem ele: agora |
 
-Filtra `FinancialLedger.occurredAt`. Data inválida ou `from > to` → `400`. Sem token → `401`.
+Filtra `FinancialLedger.occurredAt`. Data inválida ou `from > to` → `400`. Sem token → `401`. Usuário que não é admin → `403`.
 
-Resposta (amostra fictícia, novembro/2026):
+Resposta (amostra fictícia, novembro/2026; trecho):
 
 ```json
 {
   "success": true,
   "meta": { "periodo": { "from": "2026-11-01", "to": "2026-11-30", "campo": "FinancialLedger.occurredAt" }, "moeda": "BRL", "somenteLeitura": true, "regras": ["..."] },
   "data": {
-    "totalLiquidoLedger": 910,
-    "porNivel": { "comprovada": 320, "provavel": 440, "sem_vinculo": 150 },
+    "totalLiquidoLedger": 1290,
+    "porNivel": { "comprovada": 480, "provavel": 570, "sem_vinculo": 240 },
     "linhas": [
       { "nivel": "comprovada", "origem": "meta_ads", "campanha": null, "adId": "AD-FICTICIO-1", "recebido": 200, "estornos": 0, "liquido": 200, "pacientes": 1, "lancamentos": 1, "motivosPorLancamento": { "sinal_forte_telefone_exclusivo": 1 } },
+      { "nivel": "comprovada", "origem": "meta_ads", "campanha": null, "adId": "AD-FICTICIO-2", "recebido": 160, "estornos": 0, "liquido": 160, "pacientes": 1 },
       { "nivel": "comprovada", "origem": "google_ads", "campanha": "gg-fono-infantil", "recebido": 120, "estornos": 0, "liquido": 120, "pacientes": 1 },
       { "nivel": "comprovada", "origem": "tiktok_ads", "campanha": "tt-avaliacao", "recebido": 180, "estornos": 180, "liquido": 0, "pacientes": 1 },
-      { "nivel": "provavel", "origem": "google_ads", "campanha": "gg-fono-infantil", "recebido": 340, "estornos": 0, "liquido": 340, "pacientes": 2, "motivosPorLancamento": { "sinal_forte_em_telefone_compartilhado": 2 } },
+      { "nivel": "provavel", "origem": "google_ads", "campanha": "gg-fono-infantil", "recebido": 470, "estornos": 0, "liquido": 470, "pacientes": 3, "motivosPorLancamento": { "sinal_forte_em_telefone_compartilhado": 3 } },
       { "nivel": "provavel", "origem": "instagram", "campanha": null, "recebido": 100, "estornos": 0, "liquido": 100, "pacientes": 1, "motivosPorLancamento": { "so_sinal_fraco": 1 } }
     ],
-    "semVinculo": { "recebido": 150, "estornos": 0, "liquido": 150, "pacientes": 1, "lancamentos": 1, "motivos": { "sem_origem_capturada": 150 } },
-    "invariante": { "somaNiveis": 910, "totalLiquidoLedger": 910, "fecha": true },
+    "semVinculo": { "recebido": 240, "estornos": 0, "liquido": 240, "pacientes": 2, "lancamentos": 2, "motivos": { "sem_origem_capturada": 150, "contato_da_campanha_depois_do_recebimento": 90 } },
+    "invariante": { "somaNiveis": 1290, "totalLiquidoLedger": 1290, "fecha": true },
     "excluidos": {
       "revenue_recognition": { "lancamentos": 1, "valor": 120 },
       "reversal_sem_vinculo_de_caixa": { "lancamentos": 1, "valor": 80 },
@@ -49,6 +50,11 @@ Resposta (amostra fictícia, novembro/2026):
 
 A resposta não traz nome nem telefone de paciente: só contagens.
 
+Motivos possíveis em `semVinculo.motivos`: `sem_origem_capturada` (ou outro `unknownReason` da AdConversion),
+`sem_telefone`, `sem_aquisicao_e_sem_origem_no_telefone`, `lancamento_sem_paciente`,
+`contato_da_campanha_depois_do_recebimento`, `origem_sem_data_de_contato`, `recebimento_sem_data` e
+`estorno_sem_recebimento_original`.
+
 ### `GET /api/v2/analytics/attribution-health?from=&to=`
 
 Lê só `AdConversion` (filtro por `eventTime`). Por destino (`meta`, `google_api`, `tiktok`):
@@ -57,6 +63,16 @@ Lê só `AdConversion` (filtro por `eventTime`). Por destino (`meta`, `google_ap
 As contagens reaproveitam `summarizeDelivery` (`routes/analytics/funnel.logic.js`).
 `google_csv`: `noFeedSemProvaDeImportacao` (gclid nos últimos 60 dias, como em `routes/adsFeed.js`),
 `foraDaJanelaDoFeed`, `naoAquisicaoComGclidNoFeed` e `ignoradoPorMotivo`. Também `origemNaoIdentificada` por `unknownReason`.
+
+## Acesso
+
+As duas rotas são **só admin**: `auth` (JWT de usuário; confere que o usuário existe e está ativo) +
+`authorize(['admin'])`, o mesmo padrão das rotas financeiras restritas (ex.: `GET /reconciliation` em
+`routes/financial/dashboard.routes.js`, `routes/admin/financialMetrics.routes.js`).
+Sem token → `401`; secretária ou profissional → `403`. Tokens de serviço (Amanda/Agenda) não têm acesso.
+
+**Quem pode ver a receita da clínica é decisão do dono.** Admin-only é o padrão; para abrir a outro perfil,
+basta trocar a lista de `ADMIN_ONLY` em `routes/analytics/attribution.routes.js` (e o teste de acesso).
 
 ## Regras
 
@@ -74,20 +90,58 @@ As contagens reaproveitam `summarizeDelivery` (`routes/analytics/funnel.logic.js
    Um pacote de R$ 600 com R$ 200 pagos gera um lançamento de R$ 200.
 5. **`insurance_received` é o repasse do convênio** (valor líquido depois de ISS/glosa; `services/billing/insuranceBilling.js`,
    `services/insuranceBatchService.js`, `services/autoInsuranceSettlementService.js`). `insurance_billed` (faturado) não entra.
-6. **Origem por paciente (first-touch):** a `AdConversion` com `isAcquisition: true`. Se ela não existe ou tem
-   `source: 'unknown'`, usa a `LeadAttribution` mais antiga do telefone do paciente (com e sem o 9). Se nada, vai para "sem vínculo" com o motivo.
-7. **Nível de evidência:**
+6. **Origem por recebimento (first-touch com data):** cada recebimento só vai para uma campanha se houver
+   prova de que o contato pela campanha aconteceu **até a data do recebimento** (`occurredAt`).
+   - Candidatas, nesta ordem: a `AdConversion` do paciente com `isAcquisition: true` (se `source` não for `unknown`);
+     depois as `LeadAttribution` do telefone do paciente (com e sem o 9), da mais antiga para a mais nova.
+   - Data do contato: `AdConversion.eventTime` (momento do agendamento, que vem depois do contato) ou, se for
+     anterior, o `firstMessageAt` da `LeadAttribution` do mesmo telefone com a **mesma** origem; para a
+     `LeadAttribution`, o `firstMessageAt`.
+   - Vale a primeira candidata com contato até o recebimento. Exemplo: pagou em outubro, chegou pela campanha
+     em novembro e pagou de novo → só o pagamento de novembro vai para a campanha; o de outubro vai para uma
+     origem anterior, se houver, ou para "sem vínculo" com `contato_da_campanha_depois_do_recebimento`.
+   - Candidata sem data de contato não prova nada (`origem_sem_data_de_contato`).
+7. **Estorno/reversão desfaz o recebimento original.** O recebimento original é achado por `reversalOfEntryId`
+   ou pelo crédito de caixa do mesmo `payment` (o loader busca no ledger mesmo fora do período). O débito vai
+   para a campanha e o nível **daquele recebimento, na data dele**, nunca para a origem atual do paciente.
+   Sem recebimento original encontrado: "sem vínculo" com `estorno_sem_recebimento_original`.
+8. **Nível de evidência:**
    - `comprovada`: click id (`gclid`/`fbc`/`ttclid`/`ctwaClid`) ou método `ctwa`/`site_signature`/`token`, num telefone de **um só** paciente;
    - `provavel`: sinal forte num telefone usado por mais de um paciente, ou só palavra-chave, manual, lead ou método desconhecido;
-   - `sem_vinculo`: nenhuma origem.
-8. **Invariante:** `comprovada + provavel + sem_vinculo = totalLiquidoLedger`. Cálculo em centavos inteiros.
-9. **Período por caixa:** um estorno conta no período em que aconteceu (`occurredAt` do estorno), mesmo que o pagamento seja de outro mês.
+   - `sem_vinculo`: nenhuma origem com contato até a data do recebimento.
+
+   **Telefone compartilhado é sempre `provavel`.** Não existe, nos dados que o CRM grava, prova individual de
+   qual irmão veio pela campanha: a `AdConversion` é ligada ao paciente pelo agendamento, mas `source` e click
+   ids vêm do **telefone** (`getAttributionByPhone` em `crons/adsConversion.cron.js`) ou do Lead do agendamento;
+   e o Lead é ligado ao paciente também pelo telefone (`ensureLeadForAppointment` procura `contact.phone` e só
+   preenche `convertedToPatient` se estiver vazio). Por isso nada aqui promove um telefone compartilhado a
+   `comprovada`.
+9. **Invariante:** `comprovada + provavel + sem_vinculo = totalLiquidoLedger`. Cálculo em centavos inteiros.
+10. **Período por caixa:** um estorno conta no período em que aconteceu (`occurredAt` do estorno), mesmo que o pagamento seja de outro mês.
+
+## Consultas do loader (todas por índice)
+
+| Coleção | Filtro | Índice |
+|---|---|---|
+| `FinancialLedger` | `occurredAt` no período | `occurredAt` |
+| `FinancialLedger` | recebimento original: `_id $in` / `{ payment $in, type $in }` | `_id` / `{ payment, type }` |
+| `Patient` | `_id $in` (quem pagou) e `phone $in` (grafias do mesmo número) | `_id` / `{ phone }` |
+| `AdConversion` | `{ patient: { $in, $type: 'objectId' }, isAcquisition: true }` | parcial `uniq_acquisition_per_patient` |
+| `LeadAttribution` | `phone $in` (variantes normalizadas) | `phone` (único) |
+
+Nenhuma consulta usa regex nem varre a coleção. `Patient.phone` é texto livre, então a busca de irmãos gera as
+grafias comuns do mesmo número e procura todas com `$in` (pontos no índice): só dígitos, com `55` e `+55`,
+com DDD entre parênteses ou não, com espaço ou hífen, cada uma com e sem o 9 — por exemplo `(62) 99999-0000`,
+`62999990000`, `+55 62 99999-0000`, `+55 (62) 99999-0000` e `(62) 9999-0000`. Depois, tudo é normalizado para
+dígitos (`normalizeE164BR` + chave sem o 9) antes de comparar.
 
 ## Demonstração (5 passos, só dados fictícios)
 
 1. Instale as dependências na pasta `back`: `npm ci`.
 2. Veja a tabela da amostra fictícia, sem banco: `node scripts/demo-receita-por-campanha.mjs`
-   (sai com código 0 e a linha `OK: bate com a auditoria (910 = 320 + 440 + 150).`). Com `--json` imprime a resposta inteira.
+   (sai com código 0 e a linha `OK: bate com a amostra (1290 = 480 + 570 + 240).`). Com `--json` imprime a resposta inteira.
+   A amostra é a da auditoria (910 = 320 + 440 + 150) mais dois casos da revisão: Hugo (pagou 90 antes de chegar
+   pelo anúncio e 160 depois) e Iris (Google, 130) com o irmão João cadastrado com outra grafia do mesmo número.
 3. Rode os testes do núcleo e das rotas (models falsos em memória):
    `npx vitest run tests/unit/revenueAttribution.test.js tests/unit/attribution.routes.test.js`
 4. Rode o teste do loader contra um MongoDB descartável (mongodb-memory-server baixa o binário na primeira vez):
@@ -97,8 +151,13 @@ As contagens reaproveitam `summarizeDelivery` (`routes/analytics/funnel.logic.js
 
 ## Limitações conhecidas
 
-- Compartilhamento de telefone: procura outros pacientes pelo telefone nos formatos `55DD9…`, `+55DD9…` e `DD9…`
-  (com e sem o 9) e pelos telefones de `AdConversion`. Um cadastro com máscara (`(62) 9…`) de **outro** paciente
-  não é achado pela consulta; o paciente que pagou é sempre lido pelo `_id`, com qualquer formato.
-- A `LeadAttribution` usada como fallback não é comparada com a data do primeiro agendamento: uma origem capturada
-  depois do pagamento ainda é aceita (sempre como `provavel`, a menos que traga click id em telefone exclusivo).
+- Grafias de telefone fora da lista (ex.: `62.99999.0000`, `0xx62…`, número com ramal ou texto) não são achadas
+  na busca de irmãos. Achar qualquer grafia exigiria regex sem âncora em `Patient.phone`, que percorre o índice
+  inteiro a cada consulta; preferimos a lista fechada de grafias por `$in`. O paciente que pagou é sempre lido
+  pelo `_id`, com qualquer grafia. Um campo de telefone normalizado no `Patient` resolveria de vez, mas exige
+  mudança de model e migração (fora deste PR).
+- `AdConversion.phone` não tem índice: o loader **não** procura irmãos pelo telefone da `AdConversion`, só pelo
+  `Patient.phone` (incluindo o telefone da aquisição de quem pagou). Um irmão cujo cadastro tem outro número,
+  mas cujo agendamento usou o telefone da mãe, não é visto como compartilhamento.
+- A data do contato é a melhor prova que o CRM grava (`eventTime` do agendamento ou `firstMessageAt` da conversa).
+  Um contato real anterior que não foi registrado não conta.

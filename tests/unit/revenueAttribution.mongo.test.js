@@ -1,7 +1,8 @@
 /**
  * Loader da receita por campanha contra um MongoDB DESCARTÁVEL (mongodb-memory-server),
  * com a amostra fictícia gravada direto na coleção (dado de teste, nunca produção).
- * Confere: período por occurredAt, invariante 910 = 320 + 440 + 150 e que o loader NÃO escreve nada.
+ * Confere: período por occurredAt, invariante 1.290 = 480 + 570 + 240, telefone com máscara achado pelo
+ * índice de Patient.phone, campanha só a partir da data do contato e que o loader NÃO escreve nada.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import mongoose from 'mongoose';
@@ -43,14 +44,16 @@ afterAll(async () => {
 });
 
 describe('loadRevenueAttribution (Mongo descartável)', () => {
-  it('novembro/2026 fecha 910 = 320 + 440 + 150, sem escrever nada', async () => {
+  it('novembro/2026 fecha 1.290 = 480 + 570 + 240, sem escrever nada', async () => {
     const antes = await counts();
     const r = await loadRevenueAttribution({
       since: new Date('2026-11-01T03:00:00.000Z'),
       until: new Date('2026-12-01T02:59:59.999Z'),
     });
     expect(r.totalLiquidoLedger).toBe(ESPERADO.total);
-    expect(r.porNivel).toEqual({ comprovada: 320, provavel: 440, sem_vinculo: 150 });
+    expect(r.porNivel).toEqual({ comprovada: 480, provavel: 570, sem_vinculo: 240 });
+    // Iris ("(62) 99999-0009") divide o número com o irmão ("+55 62 99999-0009"): provável
+    expect(r.linhas.find((l) => l.nivel === 'provavel' && l.origem === 'google_ads')).toMatchObject({ liquido: 470, pacientes: 3 });
     expect(r.invariante.fecha).toBe(true);
     expect(await counts()).toEqual(antes);
   });
@@ -61,6 +64,8 @@ describe('loadRevenueAttribution (Mongo descartável)', () => {
       until: new Date('2026-11-01T02:59:59.999Z'),
     });
     expect(r.totalLiquidoLedger).toBe(999);
-    expect(r.porNivel.comprovada).toBe(999); // Ana: gclid, telefone exclusivo
+    // Ana só chegou pelo Google em 05/11 (eventTime): o pagamento de 15/10 não vai para a campanha
+    expect(r.porNivel).toEqual({ comprovada: 0, provavel: 0, sem_vinculo: 999 });
+    expect(r.semVinculo.motivos).toEqual({ contato_da_campanha_depois_do_recebimento: 999 });
   });
 });

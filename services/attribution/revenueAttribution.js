@@ -22,17 +22,31 @@
 //
 // O sinal vem de `direction` (credit/debit), nunca do nome do tipo.
 //
-// Origem (por PACIENTE, first-touch):
-//   1) AdConversion com isAcquisition=true do paciente (source/campaign/adId/método/click ids);
-//   2) se não houver origem ali (ou source='unknown'): LeadAttribution pelo telefone do paciente
-//      (variantes com/sem o 9 — phoneKey), a mais antiga;
-//   3) senão: linha "sem vínculo", com o motivo.
+// Origem (por LANÇAMENTO, first-touch com data):
+//   Cada recebimento só vai para uma campanha se houver prova de que o contato pela campanha
+//   aconteceu ATÉ a data do recebimento (occurredAt). Data do contato:
+//     - AdConversion de aquisição: eventTime (momento do agendamento, que vem depois do contato);
+//       se a LeadAttribution do telefone tiver a MESMA origem, vale o firstMessageAt dela quando
+//       for anterior (o cron grava a origem da AdConversion a partir dessa LeadAttribution);
+//     - LeadAttribution: firstMessageAt.
+//   Ordem: 1) AdConversion com isAcquisition=true do paciente (source/campaign/adId/método/click ids);
+//          2) LeadAttribution pelo telefone do paciente (variantes com/sem o 9 — phoneKey), da mais
+//             antiga para a mais nova;
+//          3) senão: linha "sem vínculo", com o motivo (ex.: contato_da_campanha_depois_do_recebimento).
+//   Estorno/reversão desfaz o recebimento ORIGINAL: usa a campanha e o nível daquele recebimento
+//   (resolvidos na data dele), nunca a origem atual do paciente.
 // Nível de evidência:
 //   comprovada  = click id (gclid/fbc/ttclid/ctwaClid) ou método ctwa/site_signature/token,
 //                 num telefone usado por UM só paciente;
 //   provavel    = sinal forte num telefone compartilhado (irmãos, mãe com 2 filhos), ou só
 //                 palavra-chave/manual/lead/método desconhecido;
-//   sem_vinculo = nenhuma origem.
+//   sem_vinculo = nenhuma origem com contato até a data do recebimento.
+// Telefone compartilhado é SEMPRE "provável": o CRM não tem prova individual da aquisição.
+//   - AdConversion.patient é por agendamento, mas source/click ids vêm do TELEFONE
+//     (getAttributionByPhone no crons/adsConversion.cron.js) ou do Lead do agendamento;
+//   - o Lead é ligado ao paciente pelo telefone (ensureLeadForAppointment procura
+//     Leads por contact.phone e só preenche convertedToPatient se estiver vazio).
+//   Ou seja: nenhum campo lido aqui diz QUAL irmão clicou no anúncio.
 // Invariante: comprovada + provavel + sem_vinculo === total líquido do ledger no período.
 //
 // Tudo em centavos inteiros por dentro (sem erro de ponto flutuante); a saída é em reais.
@@ -69,15 +83,25 @@ function hasClickId(o = {}) {
   return Boolean(o.gclid || o.fbc || o.fbclid || o.ttclid || o.ctwaClid);
 }
 
+const toMs = (d) => {
+  if (d == null) return null;
+  const t = new Date(d).getTime();
+  return Number.isNaN(t) ? null : t;
+};
+const minMs = (...vals) => {
+  const ok = vals.filter((v) => v != null);
+  return ok.length ? Math.min(...ok) : null;
+};
+
 /**
  * Núcleo PURO. Não toca em banco.
  *
  * @param {object} input
- * @param {Array} input.ledgerEntries      lançamentos do período (lean): _id type direction amount patient payment reversalOfEntryId
- * @param {Array} [input.referenceEntries] lançamentos FORA do período só para achar o paciente de uma
- *                                         reversão/estorno (não entram na soma)
- * @param {Array} [input.adConversions]    AdConversion (lean) dos pacientes e dos telefones envolvidos
- * @param {Array} [input.leadAttributions] LeadAttribution (lean) dos telefones envolvidos
+ * @param {Array} input.ledgerEntries      lançamentos do período (lean): _id type direction amount patient payment reversalOfEntryId occurredAt
+ * @param {Array} [input.referenceEntries] lançamentos FORA do período só para achar o recebimento original de uma
+ *                                         reversão/estorno (paciente e data; não entram na soma)
+ * @param {Array} [input.adConversions]    AdConversion (lean) de aquisição dos pacientes (com eventTime)
+ * @param {Array} [input.leadAttributions] LeadAttribution (lean) dos telefones envolvidos (com firstMessageAt)
  * @param {Array} [input.patients]         [{ _id, phone }] — pacientes do ledger E quem divide telefone com eles
  */
 export function attributeReceivedRevenue({
@@ -106,64 +130,93 @@ export function attributeReceivedRevenue({
     addOwner(keyOfPhone(c.phone), pid);
     if (pid && c.isAcquisition && !acquisitionByPatient.has(pid)) acquisitionByPatient.set(pid, c);
   }
-  // LeadAttribution: a mais antiga entre as variantes do telefone (first-touch)
-  const attrByPhone = new Map();
+  // LeadAttribution por telefone (variantes juntas), da mais antiga para a mais nova (first-touch)
+  const attrsByPhone = new Map();
   for (const a of leadAttributions) {
     const k = keyOfPhone(a.phone);
     if (!k) continue;
-    const cur = attrByPhone.get(k);
-    const t = a.firstMessageAt ? new Date(a.firstMessageAt).getTime() : Infinity;
-    const tc = cur?.firstMessageAt ? new Date(cur.firstMessageAt).getTime() : Infinity;
-    if (!cur || t < tc) attrByPhone.set(k, a);
+    if (!attrsByPhone.has(k)) attrsByPhone.set(k, []);
+    attrsByPhone.get(k).push(a);
+  }
+  for (const list of attrsByPhone.values()) {
+    list.sort((x, y) => (toMs(x.firstMessageAt) ?? Infinity) - (toMs(y.firstMessageAt) ?? Infinity));
   }
 
-  // ── 2. Origem + nível por paciente ───────────────────────────────────────────
-  const originCache = new Map();
-  function resolveOrigin(pid) {
-    if (!pid) return { nivel: 'sem_vinculo', motivo: 'lancamento_sem_paciente' };
-    if (originCache.has(pid)) return originCache.get(pid);
+  // ── 2. Origem + nível de um paciente NA DATA de um recebimento ───────────────
+  // Candidatas em ordem de prioridade; vale a primeira cujo contato tem data <= recebimento.
+  const candidatesCache = new Map();
+  function candidatesOf(pid) {
+    if (candidatesCache.has(pid)) return candidatesCache.get(pid);
     const acq = acquisitionByPatient.get(pid) || null;
     const phone = phoneByPatient.get(pid) || keyOfPhone(acq?.phone);
     const shared = phone ? (ownersByPhone.get(phone)?.size || 0) > 1 : false;
-
-    let origin = null;
+    const attrs = (phone && attrsByPhone.get(phone)) || [];
+    const list = [];
     if (acq && acq.source && acq.source !== 'unknown') {
-      origin = {
+      const sameSourceAttr = attrs.filter((a) => a.source === acq.source).map((a) => toMs(a.firstMessageAt));
+      list.push({
         via: 'adConversion', source: acq.source, campaign: acq.campaign || null, adId: acq.adId || null,
         method: acq.attributionMethod || null, strong: hasClickId(acq) || STRONG_METHODS.includes(acq.attributionMethod),
-      };
-    } else if (phone && attrByPhone.has(phone)) {
-      const a = attrByPhone.get(phone);
-      origin = {
+        contactAt: minMs(toMs(acq.eventTime), ...sameSourceAttr),
+      });
+    }
+    for (const a of attrs) {
+      if (!a.source) continue;
+      list.push({
         via: 'leadAttribution', source: a.source, campaign: a.campaign || null, adId: a.adId || null,
         method: a.method || null, strong: hasClickId(a) || STRONG_METHODS.includes(a.method),
-      };
+        contactAt: toMs(a.firstMessageAt),
+      });
     }
-
-    let out;
-    if (!origin || !origin.source) {
-      const motivo = acq?.unknownReason || (!phone ? 'sem_telefone' : (acq ? 'sem_origem_capturada' : 'sem_aquisicao_e_sem_origem_no_telefone'));
-      out = { nivel: 'sem_vinculo', motivo, telefoneCompartilhado: shared };
-    } else {
-      const nivel = origin.strong && !shared ? 'comprovada' : 'provavel';
-      const motivo = nivel === 'comprovada' ? 'sinal_forte_telefone_exclusivo'
-        : origin.strong ? 'sinal_forte_em_telefone_compartilhado' : 'so_sinal_fraco';
-      out = { ...origin, nivel, motivo, telefoneCompartilhado: shared };
-    }
-    originCache.set(pid, out);
+    const out = { acq, phone, shared, list };
+    candidatesCache.set(pid, out);
     return out;
   }
 
-  // ── 3. Paciente de cada lançamento (reversão/estorno herdam do crédito) ──────
+  function resolveOrigin(pid, atMs) {
+    if (!pid) return { nivel: 'sem_vinculo', motivo: 'lancamento_sem_paciente' };
+    const { acq, phone, shared, list } = candidatesOf(pid);
+    const origin = atMs == null ? null : list.find((c) => c.contactAt != null && c.contactAt <= atMs) || null;
+    if (!origin) {
+      let motivo;
+      if (list.length && atMs == null) motivo = 'recebimento_sem_data';
+      else if (list.some((c) => c.contactAt != null)) motivo = 'contato_da_campanha_depois_do_recebimento';
+      else if (list.length) motivo = 'origem_sem_data_de_contato';
+      else motivo = acq?.unknownReason || (!phone ? 'sem_telefone' : (acq ? 'sem_origem_capturada' : 'sem_aquisicao_e_sem_origem_no_telefone'));
+      return { nivel: 'sem_vinculo', motivo, telefoneCompartilhado: shared };
+    }
+    const nivel = origin.strong && !shared ? 'comprovada' : 'provavel';
+    const motivo = nivel === 'comprovada' ? 'sinal_forte_telefone_exclusivo'
+      : origin.strong ? 'sinal_forte_em_telefone_compartilhado' : 'so_sinal_fraco';
+    return { ...origin, nivel, motivo, telefoneCompartilhado: shared };
+  }
+
+  // ── 3. Recebimento original de cada estorno/reversão ─────────────────────────
   const byId = new Map();
-  const creditPatientByPayment = new Map();
+  const creditByPayment = new Map(); // payment -> crédito de caixa mais antigo daquele pagamento
   for (const e of [...referenceEntries, ...ledgerEntries]) {
     byId.set(id(e._id), e);
-    if (e.payment && e.patient && CASH_CREDIT_TYPES.includes(e.type)) creditPatientByPayment.set(id(e.payment), id(e.patient));
+    if (e.payment && CASH_CREDIT_TYPES.includes(e.type)) {
+      const k = id(e.payment);
+      const cur = creditByPayment.get(k);
+      if (!cur || (toMs(e.occurredAt) ?? Infinity) < (toMs(cur.occurredAt) ?? Infinity)) creditByPayment.set(k, e);
+    }
   }
-  const patientOf = (e) => id(e.patient)
-    || (e.reversalOfEntryId ? id(byId.get(id(e.reversalOfEntryId))?.patient) : null)
-    || (e.payment ? creditPatientByPayment.get(id(e.payment)) || null : null);
+  const originalOf = (e) => (e.reversalOfEntryId ? byId.get(id(e.reversalOfEntryId)) : null)
+    || (e.payment ? creditByPayment.get(id(e.payment)) : null)
+    || null;
+
+  // Crédito: origem na data dele. Débito: a MESMA origem/nível do recebimento que ele desfaz.
+  function attributionOf(e, signedCents) {
+    if (signedCents >= 0) {
+      const pid = id(e.patient);
+      return { pid, o: resolveOrigin(pid, toMs(e.occurredAt)) };
+    }
+    const orig = originalOf(e);
+    const pid = id(e.patient) || id(orig?.patient) || null;
+    if (!orig) return { pid, o: { nivel: 'sem_vinculo', motivo: 'estorno_sem_recebimento_original' } };
+    return { pid, o: resolveOrigin(id(orig.patient) || pid, toMs(orig.occurredAt)) };
+  }
 
   // ── 4. Soma ──────────────────────────────────────────────────────────────────
   let netCents = 0;
@@ -180,8 +233,7 @@ export function attributeReceivedRevenue({
       continue;
     }
     netCents += c.signedCents;
-    const pid = patientOf(e);
-    const o = resolveOrigin(pid);
+    const { pid, o } = attributionOf(e, c.signedCents);
     levelCents[o.nivel] += c.signedCents;
     const credit = c.signedCents > 0 ? c.signedCents : 0;
     const debit = c.signedCents < 0 ? -c.signedCents : 0;
@@ -238,8 +290,9 @@ export const REGRAS = Object.freeze([
   'Conta: payment_received, package_purchase e insurance_received (créditos), menos refund/reversal/write_off vinculados a um pagamento.',
   'package_purchase = valor de cada Payment de pacote já pago (não o total do pacote). insurance_received = repasse líquido do convênio.',
   'Fora: revenue_recognition, package_consumed, payment_pending, insurance_billed, adjustment, transfer e reversão de sessão sem pagamento.',
-  'Origem por paciente: AdConversion de aquisição; senão LeadAttribution pelo telefone; senão "sem vínculo".',
-  'Comprovada = click id ou ctwa/assinatura do site/token em telefone de um só paciente. Provável = sinal forte em telefone compartilhado, ou só palavra-chave/manual.',
+  'Origem por recebimento: AdConversion de aquisição; senão LeadAttribution pelo telefone; senão "sem vínculo". Só vale origem com contato (eventTime/firstMessageAt) até a data do recebimento.',
+  'Estorno/reversão desfaz o recebimento original: mesma campanha e nível daquele recebimento, não a origem atual do paciente.',
+  'Comprovada = click id ou ctwa/assinatura do site/token em telefone de um só paciente. Provável = sinal forte em telefone compartilhado (não há prova individual de qual irmão veio), ou só palavra-chave/manual.',
   'Invariante: comprovada + provável + sem vínculo = total líquido do ledger.',
 ]);
 
@@ -248,7 +301,8 @@ export const REGRAS = Object.freeze([
 // Os models são injetáveis para teste; por padrão importa os reais sob demanda.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function phoneVariantsOf(raw) {
+// Variantes normalizadas (só dígitos, com 55): com e sem o 9.
+export function phoneVariantsOf(raw) {
   const n = normalizeE164BR(raw);
   if (!n) return [];
   const out = [n];
@@ -256,9 +310,28 @@ function phoneVariantsOf(raw) {
   if (m) out.push(m[2] ? `55${m[1]}${m[3]}` : `55${m[1]}9${m[3]}`);
   return out;
 }
-// Formatos em que o telefone costuma estar gravado (55DD9…, +55DD9…, DD9…, com e sem o 9).
-function phoneFormatsOf(raw) {
-  return phoneVariantsOf(raw).flatMap((v) => [v, `+${v}`, v.slice(2)]);
+
+// Grafias em que o telefone costuma estar gravado em Patient.phone (campo livre, com máscara ou não):
+// 62999990000, 5562999990000, +5562999990000, (62) 99999-0000, 62 99999-0000, +55 62 99999-0000,
+// +55 (62) 99999-0000 … cada uma com e sem o 9. Patient.phone tem índice ({ phone: 1 }), então a
+// busca é `$in` exato nessas grafias (pontos no índice), nunca regex nem varredura da coleção.
+// Grafia fora desta lista (ex.: "62.99999.0000", "0xx62…") não é achada: ver Limitações no doc.
+const COUNTRY_PREFIXES = ['', '55', '55 ', '+55', '+55 '];
+const AREA_FORMATS = [(d) => d, (d) => `${d} `, (d) => `(${d})`, (d) => `(${d}) `];
+export function phoneFormatsOf(raw) {
+  const out = new Set();
+  for (const v of phoneVariantsOf(raw)) {
+    const m = v.match(/^55(\d{2})(\d{8,9})$/);
+    if (!m) { out.add(v); out.add(`+${v}`); continue; }
+    const [, ddd, local] = m;
+    const locals = [local, `${local.slice(0, -4)}-${local.slice(-4)}`];
+    for (const cc of COUNTRY_PREFIXES) {
+      for (const area of AREA_FORMATS) {
+        for (const l of locals) out.add(`${cc}${area(ddd)}${l}`);
+      }
+    }
+  }
+  return [...out];
 }
 
 async function defaultModels() {
@@ -275,11 +348,21 @@ async function defaultModels() {
 }
 
 const LEDGER_FIELDS = '_id type direction amount patient payment reversalOfEntryId occurredAt';
-const ADCONV_FIELDS = '_id patient phone isAcquisition source attributionMethod campaign adId gclid fbc ttclid ctwaClid unknownReason';
+const REFERENCE_FIELDS = '_id type patient payment occurredAt';
+const ADCONV_FIELDS = '_id patient phone isAcquisition source attributionMethod campaign adId gclid fbc ttclid ctwaClid unknownReason eventTime';
 const ATTR_FIELDS = '_id phone source method campaign adId gclid fbclid ttclid ctwaClid firstMessageAt';
 
 /**
  * Carrega do Mongo (read-only) e calcula. `since`/`until` filtram FinancialLedger.occurredAt.
+ *
+ * Todas as consultas usam índice (nenhuma varre a coleção):
+ *   FinancialLedger: occurredAt (período), _id (recebimento original), { payment, type } (crédito do estorno)
+ *   Patient:         _id e { phone } com `$in` nas grafias de phoneFormatsOf
+ *   AdConversion:    índice parcial uniq_acquisition_per_patient — a consulta repete o filtro dele
+ *                    (patient $type objectId + isAcquisition: true) para o planner poder usá-lo
+ *   LeadAttribution: phone (único), nas variantes normalizadas
+ * AdConversion.phone NÃO tem índice: por isso o loader não procura irmãos pelo telefone da
+ * AdConversion (só pelo Patient.phone). Ver Limitações em docs/RECEITA_POR_CAMPANHA.md.
  */
 export async function loadRevenueAttribution({ since, until, models } = {}) {
   const M = models || await defaultModels();
@@ -290,19 +373,23 @@ export async function loadRevenueAttribution({ since, until, models } = {}) {
 
   const ledgerEntries = await M.FinancialLedger.find(ledgerFilter).select(LEDGER_FIELDS).lean();
 
-  // Paciente de reversão/estorno cujo crédito está fora do período
+  // Recebimento original de estornos/reversões cujo crédito está fora do período
+  // (o estorno usa a campanha/nível do recebimento original, na data dele).
   const inPeriod = new Set(ledgerEntries.map((e) => id(e._id)));
-  const missingTargets = [...new Set(ledgerEntries
-    .filter((e) => !e.patient && e.reversalOfEntryId && !inPeriod.has(id(e.reversalOfEntryId)))
+  const creditPaymentsInPeriod = new Set(ledgerEntries
+    .filter((e) => e.payment && CASH_CREDIT_TYPES.includes(e.type)).map((e) => id(e.payment)));
+  const cashDebits = ledgerEntries.filter((e) => CASH_DEBIT_TYPES.includes(e.type) && (e.payment || e.reversalOfEntryId));
+  const missingTargets = [...new Set(cashDebits
+    .filter((e) => e.reversalOfEntryId && !inPeriod.has(id(e.reversalOfEntryId)))
     .map((e) => id(e.reversalOfEntryId)))];
-  const orphanPayments = [...new Set(ledgerEntries
-    .filter((e) => !e.patient && e.payment && CASH_DEBIT_TYPES.includes(e.type))
+  const missingPayments = [...new Set(cashDebits
+    .filter((e) => e.payment && !creditPaymentsInPeriod.has(id(e.payment)))
     .map((e) => id(e.payment)))];
   const refOr = [];
   if (missingTargets.length) refOr.push({ _id: { $in: missingTargets } });
-  if (orphanPayments.length) refOr.push({ payment: { $in: orphanPayments }, type: { $in: [...CASH_CREDIT_TYPES] } });
+  if (missingPayments.length) refOr.push({ payment: { $in: missingPayments }, type: { $in: [...CASH_CREDIT_TYPES] } });
   const referenceEntries = refOr.length
-    ? await M.FinancialLedger.find({ $or: refOr }).select('_id type patient payment').lean()
+    ? await M.FinancialLedger.find({ $or: refOr }).select(REFERENCE_FIELDS).lean()
     : [];
 
   const patientIds = [...new Set([...ledgerEntries, ...referenceEntries].map((e) => id(e.patient)).filter(Boolean))];
@@ -310,34 +397,26 @@ export async function loadRevenueAttribution({ since, until, models } = {}) {
     return attributeReceivedRevenue({ ledgerEntries, referenceEntries });
   }
 
-  const [ledgerPatients, ownConversions] = await Promise.all([
+  const [ledgerPatients, adConversions] = await Promise.all([
     M.Patient.find({ _id: { $in: patientIds } }).select('_id phone').lean(),
-    M.AdConversion.find({ patient: { $in: patientIds } }).select(ADCONV_FIELDS).lean(),
+    M.AdConversion.find({ patient: { $in: patientIds, $type: 'objectId' }, isAcquisition: true }).select(ADCONV_FIELDS).lean(),
   ]);
 
-  const rawPhones = [...ledgerPatients.map((p) => p.phone), ...ownConversions.map((c) => c.phone)].filter(Boolean);
+  const rawPhones = [...ledgerPatients.map((p) => p.phone), ...adConversions.map((c) => c.phone)].filter(Boolean);
   const variants = [...new Set(rawPhones.flatMap(phoneVariantsOf))];
   const formats = [...new Set(rawPhones.flatMap(phoneFormatsOf))];
 
-  const [sharingPatients, sharingConversions, leadAttributions] = variants.length
+  const [sharingPatients, leadAttributions] = variants.length
     ? await Promise.all([
         M.Patient.find({ phone: { $in: formats } }).select('_id phone').lean(),
-        M.AdConversion.find({ phone: { $in: variants } }).select('_id patient phone').lean(),
         M.LeadAttribution.find({ phone: { $in: variants } }).select(ATTR_FIELDS).lean(),
       ])
-    : [[], [], []];
+    : [[], []];
 
   const seenPatients = new Set();
   const patients = [...ledgerPatients, ...sharingPatients].filter((p) => {
     const k = id(p._id); if (seenPatients.has(k)) return false; seenPatients.add(k); return true;
   });
-  // Conversões de terceiros (outro paciente no mesmo telefone) só servem para detectar
-  // compartilhamento: nunca como aquisição de quem pagou.
-  const own = new Set(ownConversions.map((c) => id(c._id)));
-  const adConversions = [
-    ...ownConversions,
-    ...sharingConversions.filter((c) => !own.has(id(c._id))).map((c) => ({ ...c, isAcquisition: false })),
-  ];
 
   return attributeReceivedRevenue({ ledgerEntries, referenceEntries, adConversions, leadAttributions, patients });
 }

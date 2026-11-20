@@ -2,6 +2,8 @@
 // Amostra 100% FICTÍCIA (nomes, telefones e ids inventados) para testes e para a demonstração
 // (scripts/demo-receita-por-campanha.mjs). Reproduz o caso da auditoria:
 //   ledger líquido R$ 910 = comprovada 320 + provável 440 + sem vínculo 150; painel antigo R$ 1.540.
+// Mais dois casos da revisão do PR #100 (Hugo e Iris/João), que levam a amostra a
+//   ledger líquido R$ 1.290 = comprovada 480 + provável 570 + sem vínculo 240; painel antigo R$ 2.040.
 //
 // Pacientes:
 //   Ana   — Google (gclid), telefone só dela ............ payment_received 120          → comprovada 120
@@ -14,16 +16,24 @@
 //   Fábio — só palavra-chave "instagram" (LeadAttribution), sem AdConversion; convênio
 //           ............................................... insurance_received 100 (insurance_billed 200 NÃO conta) → provável 100
 //   Gabi  — sem origem (AdConversion unknown) ............ payment_received 150          → sem vínculo 150
+//   Hugo  — pagou 90 em 03/11, ANTES de chegar pelo anúncio Meta (CTWA, agendou em 20/11), e pagou
+//           160 em 25/11 ................................. 90 → sem vínculo (contato depois do recebimento)
+//                                                          160 → comprovada (Meta, AD-FICTICIO-2)
+//   Iris  — Google (gclid), cadastro "(62) 99999-0009" ... payment_received 130          → provável 130
+//   João  — irmão da Iris, cadastro "+55 62 99999-0009" (outra grafia do MESMO número), sem nenhum
+//           lançamento no período: mesmo assim a Iris é vista como telefone compartilhado.
 // Também: reversão de cancelamento de sessão SEM pagamento (Ana, 80) e revenue_recognition — ficam fora.
 
 const oid = (n) => `0000000000000000000000${String(n).padStart(2, '0')}`;
 
 export const P = {
   ana: oid(1), bruno: oid(2), carla: oid(3), davi: oid(4), eva: oid(5), fabio: oid(6), gabi: oid(7),
+  hugo: oid(8), iris: oid(9), joao: oid(18),
 };
 export const PHONES = {
   ana: '5562999990001', bruno: '5562999990002', carla: '5562999990003',
   maeDaviEva: '5562999990004', fabio: '5562999990006', gabi: '5562999990007',
+  hugo: '5562999990008', irisJoao: '5562999990009',
 };
 
 export const patients = [
@@ -34,6 +44,9 @@ export const patients = [
   { _id: P.eva, phone: '556299990004' },                  // mesmo número SEM o 9 (variante)
   { _id: P.fabio, phone: PHONES.fabio },
   { _id: P.gabi, phone: PHONES.gabi },
+  { _id: P.hugo, phone: PHONES.hugo },
+  { _id: P.iris, phone: '(62) 99999-0009' },              // com máscara
+  { _id: P.joao, phone: '+55 62 99999-0009' },            // irmão: outra grafia, sem lançamento
 ];
 
 const conv = (n, patient, phone, extra) => ({
@@ -43,7 +56,7 @@ const conv = (n, patient, phone, extra) => ({
   ...extra,
 });
 
-// AdConversion.value somado = 1.540 (o que o painel antigo mostraria)
+// AdConversion.value somado = 2.040 (o que o painel antigo mostraria; 1.540 sem Hugo e Iris)
 export const adConversions = [
   conv(1, P.ana, PHONES.ana, { source: 'google_ads', attributionMethod: 'site_signature', campaign: 'gg-fono-infantil', gclid: 'GCLID-FICTICIO-ANA', value: 220 }),
   conv(2, P.bruno, PHONES.bruno, { source: 'meta_ads', attributionMethod: 'ctwa', adId: 'AD-FICTICIO-1', ctwaClid: 'CLID-FICTICIO-BRUNO', value: 600 }),
@@ -51,6 +64,8 @@ export const adConversions = [
   conv(4, P.davi, PHONES.maeDaviEva, { source: 'google_ads', attributionMethod: 'site_signature', campaign: 'gg-fono-infantil', gclid: 'GCLID-FICTICIO-MAE', value: 220 }),
   conv(5, P.eva, PHONES.maeDaviEva, { source: 'google_ads', attributionMethod: 'site_signature', campaign: 'gg-fono-infantil', gclid: 'GCLID-FICTICIO-MAE', value: 220 }),
   conv(7, P.gabi, PHONES.gabi, { source: 'unknown', unknownReason: 'sem_origem_capturada', value: 100 }),
+  conv(8, P.hugo, PHONES.hugo, { source: 'meta_ads', attributionMethod: 'ctwa', adId: 'AD-FICTICIO-2', ctwaClid: 'CLID-FICTICIO-HUGO', value: 300, eventTime: new Date('2026-11-20T13:00:00Z') }),
+  conv(9, P.iris, PHONES.irisJoao, { source: 'google_ads', attributionMethod: 'site_signature', campaign: 'gg-fono-infantil', gclid: 'GCLID-FICTICIO-IRIS', value: 200 }),
 ];
 
 export const leadAttributions = [
@@ -76,8 +91,11 @@ export const ledgerEntries = [
   entry(60, 'insurance_billed', 'credit', 200, P.fabio, { payment: oid(96), billingType: 'convenio' }),
   entry(61, 'insurance_received', 'credit', 100, P.fabio, { payment: oid(96), billingType: 'convenio' }),
   entry(70, 'payment_received', 'credit', 150, P.gabi, { payment: oid(97) }),
+  entry(83, 'payment_received', 'credit', 90, P.hugo, { payment: oid(86), occurredAt: at('03') }),  // antes do anúncio
+  entry(84, 'payment_received', 'credit', 160, P.hugo, { payment: oid(87), occurredAt: at('25') }), // depois do anúncio
+  entry(85, 'payment_received', 'credit', 130, P.iris, { payment: oid(88) }),
 ];
 
 export const amostra = { ledgerEntries, adConversions, leadAttributions, patients };
 
-export const ESPERADO = { total: 910, comprovada: 320, provavel: 440, sem_vinculo: 150, painelAntigo: 1540 };
+export const ESPERADO = { total: 1290, comprovada: 480, provavel: 570, sem_vinculo: 240, painelAntigo: 2040 };

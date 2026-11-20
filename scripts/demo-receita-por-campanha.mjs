@@ -26,6 +26,8 @@ console.log('\nPor nível:', Object.entries(r.porNivel).map(([k, v]) => `${k} ${
 console.log('Total líquido do ledger:', brl(r.totalLiquidoLedger), '| invariante fecha:', r.invariante.fecha ? 'SIM' : 'NÃO');
 console.log('Fora da soma (não é caixa):', JSON.stringify(r.excluidos));
 console.log('Painel antigo (soma de AdConversion.value):', brl(painelAntigo));
-const ok = r.invariante.fecha && r.totalLiquidoLedger === ESPERADO.total;
-console.log(ok ? '\nOK: bate com a auditoria (910 = 320 + 440 + 150).\n' : '\nDIVERGÊNCIA com a auditoria.\n');
+const ok = r.invariante.fecha && r.totalLiquidoLedger === ESPERADO.total
+  && ['comprovada', 'provavel', 'sem_vinculo'].every((n) => r.porNivel[n] === ESPERADO[n]);
+const conta = `${ESPERADO.total} = ${ESPERADO.comprovada} + ${ESPERADO.provavel} + ${ESPERADO.sem_vinculo}`;
+console.log(ok ? `\nOK: bate com a amostra (${conta}).\n` : `\nDIVERGÊNCIA com a amostra (${conta}).\n`);
 process.exit(ok ? 0 : 1);

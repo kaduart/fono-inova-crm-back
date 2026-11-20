@@ -1,6 +1,11 @@
 // routes/analytics/attribution.routes.js
 // Frente 2 — Attribution. SOMENTE LEITURA: nenhuma rota aqui grava no banco nem chama plataforma.
-// Montado em /api/v2/analytics (server.js), mesma auth das rotas de ROI (flexibleAuth).
+// Montado em /api/v2/analytics (server.js).
+// Acesso: SÓ ADMIN (receita da clínica). Segue o padrão das rotas financeiras restritas
+// (ex.: routes/financial/dashboard.routes.js /reconciliation, routes/admin/financialMetrics.routes.js):
+// `auth` (JWT de usuário, confere que o usuário existe e está ativo) + `authorize(['admin'])`.
+// Sem token → 401; secretária/profissional → 403. Tokens de serviço (Amanda/Agenda) não entram.
+// Quem pode ver a receita é decisão do dono da clínica; admin-only é o padrão.
 //
 //   GET /api/v2/analytics/roi/revenue-attribution?from=YYYY-MM-DD&to=YYYY-MM-DD
 //   GET /api/v2/analytics/attribution-health?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -8,7 +13,7 @@
 // Doc: docs/RECEITA_POR_CAMPANHA.md
 
 import express from 'express';
-import { flexibleAuth } from '../../middleware/amandaAuth.js';
+import { auth as userAuth, authorize } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { loadRevenueAttribution, REGRAS } from '../../services/attribution/revenueAttribution.js';
 import { loadAttributionHealth } from '../../services/attribution/attributionHealth.js';
@@ -33,10 +38,13 @@ export function parsePeriod(q = {}, now = Date.now()) {
   return { since, until, from: from || null, to: to || null };
 }
 
-export function createAttributionRouter({ auth = flexibleAuth, models } = {}) {
-  const router = express.Router();
+export const ADMIN_ONLY = Object.freeze([userAuth, authorize(['admin'])]);
 
-  router.get('/roi/revenue-attribution', auth, asyncHandler(async (req, res) => {
+export function createAttributionRouter({ auth = ADMIN_ONLY, models } = {}) {
+  const router = express.Router();
+  const guard = [].concat(auth);
+
+  router.get('/roi/revenue-attribution', ...guard, asyncHandler(async (req, res) => {
     const p = parsePeriod(req.query);
     if (p.error) return res.status(400).json({ success: false, error: p.error });
     const data = await loadRevenueAttribution({ since: p.since, until: p.until, models });
@@ -55,7 +63,7 @@ export function createAttributionRouter({ auth = flexibleAuth, models } = {}) {
     });
   }));
 
-  router.get('/attribution-health', auth, asyncHandler(async (req, res) => {
+  router.get('/attribution-health', ...guard, asyncHandler(async (req, res) => {
     const p = parsePeriod(req.query);
     if (p.error) return res.status(400).json({ success: false, error: p.error });
     const data = await loadAttributionHealth({ since: p.since, until: p.until, models });

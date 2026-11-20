@@ -4,14 +4,16 @@
  *   GET /api/v2/analytics/attribution-health  (destinos simulados: nada chama Meta/Google/TikTok)
  * Os models falsos só têm find().select().lean(): qualquer tentativa de escrita quebraria o teste.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { createAttributionRouter, parsePeriod } from '../../routes/analytics/attribution.routes.js';
 import { buildAttributionHealth } from '../../services/attribution/attributionHealth.js';
-import { amostra, ESPERADO } from '../../services/attribution/fixtures/receitaFicticia.js';
+import { amostra, ESPERADO, P } from '../../services/attribution/fixtures/receitaFicticia.js';
 
-// ── Model falso: filtro mínimo (igualdade, $in, $gte, $lte, $ne, $or, caminho com ponto) ──
+// ── Model falso: filtro mínimo (igualdade, $in, $gte, $lte, $ne, $type objectId, $or, caminho com ponto) ──
 const get = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
 const eq = (a, b) => (a instanceof Date || b instanceof Date ? +new Date(a) === +new Date(b) : String(a) === String(b));
 function matches(doc, filter) {
@@ -24,6 +26,7 @@ function matches(doc, filter) {
         if (op === '$gte') return v != null && +new Date(v) >= +new Date(arg);
         if (op === '$lte') return v != null && +new Date(v) <= +new Date(arg);
         if (op === '$ne') return v == null ? arg != null : !eq(v, arg);
+        if (op === '$type' && arg === 'objectId') return v != null && /^[0-9a-f]{24}$/.test(String(v));
         throw new Error(`operador não suportado no model falso: ${op}`);
       });
     }
@@ -56,14 +59,17 @@ function app({ auth = (req, res, next) => next(), m = models() } = {}) {
 }
 
 describe('GET /api/v2/analytics/roi/revenue-attribution', () => {
-  it('devolve 320 + 440 + 150 = 910 para novembro/2026 (fictício)', async () => {
+  it('devolve 480 + 570 + 240 = 1.290 para novembro/2026 (fictício)', async () => {
     const m = models();
     const res = await request(app({ m })).get('/api/v2/analytics/roi/revenue-attribution?from=2026-11-01&to=2026-11-30');
     expect(res.status).toBe(200);
     expect(res.body.data.totalLiquidoLedger).toBe(ESPERADO.total);
-    expect(res.body.data.porNivel).toEqual({ comprovada: 320, provavel: 440, sem_vinculo: 150 });
+    expect(res.body.data.porNivel).toEqual({ comprovada: 480, provavel: 570, sem_vinculo: 240 });
     expect(res.body.data.invariante.fecha).toBe(true);
     expect(res.body.meta.periodo.campo).toBe('FinancialLedger.occurredAt');
+    // nenhuma consulta sem filtro indexado: AdConversion só pela aquisição do paciente, nunca por telefone
+    expect(m.AdConversion.calls).toEqual([{ patient: { $in: expect.any(Array), $type: 'objectId' }, isAcquisition: true }]);
+    expect(m.Patient.calls.every((f) => f._id || f.phone)).toBe(true);
     // filtro de período aplicado no ledger
     expect(m.FinancialLedger.calls[0]).toHaveProperty('occurredAt.$gte');
     expect(m.FinancialLedger.calls[0]).toHaveProperty('occurredAt.$lte');
@@ -81,17 +87,36 @@ describe('GET /api/v2/analytics/roi/revenue-attribution', () => {
     expect(res.status).toBe(400);
   });
 
-  it('usa a mesma auth das rotas de ROI (flexibleAuth): sem token → 401', async () => {
-    const a = express();
-    a.use('/api/v2/analytics', createAttributionRouter({ models: models() }));
-    const res = await request(a).get('/api/v2/analytics/roi/revenue-attribution');
-    expect(res.status).toBe(401);
-  });
-
-  it('telefone compartilhado é detectado mesmo com o número gravado sem o 9', async () => {
+  it('telefone compartilhado é detectado com o número sem o 9 (Eva) e com outra grafia (irmão da Iris)', async () => {
     const res = await request(app()).get('/api/v2/analytics/roi/revenue-attribution?from=2026-11-01&to=2026-11-30');
     const prov = res.body.data.linhas.find((l) => l.nivel === 'provavel' && l.origem === 'google_ads');
-    expect(prov).toMatchObject({ liquido: 340, pacientes: 2 });
+    expect(prov).toMatchObject({ liquido: 470, pacientes: 3 }); // Davi 200 + Eva 140 + Iris 130
+    const comprovadaGoogle = res.body.data.linhas.find((l) => l.nivel === 'comprovada' && l.origem === 'google_ads');
+    expect(comprovadaGoogle).toMatchObject({ liquido: 120, pacientes: 1 }); // só a Ana
+  });
+
+  it('Iris paga e o irmão (cadastro "+55 62 99999-0009", sem lançamento no período) é achado pelo telefone', async () => {
+    const m = models();
+    m.FinancialLedger = fakeModel(amostra.ledgerEntries.filter((e) => String(e.patient) === P.iris));
+    const res = await request(app({ m })).get('/api/v2/analytics/roi/revenue-attribution?from=2026-11-01&to=2026-11-30');
+    expect(res.body.data.porNivel).toEqual({ comprovada: 0, provavel: 130, sem_vinculo: 0 });
+    expect(res.body.data.linhas[0].motivosPorLancamento).toEqual({ sinal_forte_em_telefone_compartilhado: 1 });
+    // sem o irmão no cadastro, a mesma Iris seria comprovada
+    m.Patient = fakeModel(amostra.patients.filter((p) => p._id !== P.joao));
+    const sozinha = await request(app({ m })).get('/api/v2/analytics/roi/revenue-attribution?from=2026-11-01&to=2026-11-30');
+    expect(sozinha.body.data.porNivel.comprovada).toBe(130);
+  });
+
+  it('estorno de um pagamento de outro mês busca o recebimento original e usa a data dele', async () => {
+    const m = models();
+    const antigo = { _id: '0000000000000000000000a1', type: 'payment_received', direction: 'credit', amount: 70, patient: P.hugo, payment: '0000000000000000000000b1', occurredAt: new Date('2026-10-20T15:00:00Z') };
+    const estorno = { _id: '0000000000000000000000a2', type: 'refund', direction: 'debit', amount: 70, patient: P.hugo, payment: antigo.payment, occurredAt: new Date('2026-11-26T15:00:00Z') };
+    m.FinancialLedger = fakeModel([...amostra.ledgerEntries, antigo, estorno]);
+    const res = await request(app({ m })).get('/api/v2/analytics/roi/revenue-attribution?from=2026-11-01&to=2026-11-30');
+    // o pagamento de outubro foi antes do anúncio do Hugo (20/11): o estorno sai do sem vínculo
+    expect(res.body.data.porNivel).toEqual({ comprovada: 480, provavel: 570, sem_vinculo: 170 });
+    expect(res.body.data.linhas.find((l) => l.adId === 'AD-FICTICIO-2')).toMatchObject({ liquido: 160, estornos: 0 });
+    expect(m.FinancialLedger.calls[1]).toEqual({ $or: [{ payment: { $in: [antigo.payment] }, type: { $in: ['payment_received', 'package_purchase', 'insurance_received'] } }] });
   });
 });
 
@@ -180,4 +205,39 @@ describe('parsePeriod', () => {
     expect(parsePeriod({ from: '2026-12-01', to: '2026-11-01' }).error).toBeTruthy();
     expect(parsePeriod({ to: 'ontem' }).error).toBeTruthy();
   });
+});
+
+// ── Acesso: só admin (auth real de middleware/auth.js + authorize(['admin'])) ──
+// JWT assinado com segredo FICTÍCIO de teste; a checagem "usuário existe" do auth é respondida
+// por um model falso (sem banco).
+describe('acesso às rotas de receita (só admin)', () => {
+  const SEGREDO = 'segredo-de-teste-ficticio';
+  const ADMIN_ID = new mongoose.Types.ObjectId().toString();
+  const SECRETARIA_ID = new mongoose.Types.ObjectId().toString();
+  let envAnterior;
+  let spy;
+  beforeAll(() => {
+    envAnterior = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = SEGREDO;
+    spy = vi.spyOn(mongoose, 'model').mockImplementation(() => ({ exists: async () => ({ _id: 'x' }) }));
+  });
+  afterAll(() => {
+    spy.mockRestore();
+    if (envAnterior === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = envAnterior;
+  });
+  const appReal = () => {
+    const a = express();
+    a.use('/api/v2/analytics', createAttributionRouter({ models: { ...models(), AdConversion: fakeModel([...amostra.adConversions, ...healthDocs]) } }));
+    return a;
+  };
+  const token = (id, role) => `Bearer ${jwt.sign({ id, role }, SEGREDO)}`;
+
+  for (const rota of ['/api/v2/analytics/roi/revenue-attribution?from=2026-11-01&to=2026-11-30', '/api/v2/analytics/attribution-health']) {
+    it(`${rota.split('?')[0]}: admin 200, secretária 403, sem token 401`, async () => {
+      const a = appReal();
+      expect((await request(a).get(rota).set('Authorization', token(ADMIN_ID, 'admin'))).status).toBe(200);
+      expect((await request(a).get(rota).set('Authorization', token(SECRETARIA_ID, 'secretary'))).status).toBe(403);
+      expect((await request(a).get(rota)).status).toBe(401);
+    });
+  }
 });
