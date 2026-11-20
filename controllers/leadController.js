@@ -193,7 +193,8 @@ export const metaLeadWebhook = async (req, res) => {
     try {
         // Validação do webhook Meta
         if (req.query['hub.mode'] === 'subscribe') {
-            const check = verifyMetaSubscription(req.query);
+            // Mesmo app da Meta: sem META_VERIFY_TOKEN, usa o token de verificação do WhatsApp.
+            const check = verifyMetaSubscription(req.query, process.env.META_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN);
             if (check.status === 200) {
                 console.log('✅ Webhook Meta validado');
                 return res.status(200).send(check.body);
