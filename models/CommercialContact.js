@@ -15,6 +15,10 @@ const commercialContactSchema = new mongoose.Schema({
   channel: { type: String, enum: ['whatsapp', 'telefone', 'presencial'], default: 'whatsapp' },
   note: { type: String, default: '', maxlength: 500 },
   until: { type: Date, default: null }, // só em churn_pause
+  // Só em lead_reply ("Marcar como respondido"): encaminhamento da Amanda a que a marcação se
+  // refere (vale só para ele) e quem informou o fechamento. Ver docs/COMMERCIAL_QUEUES.md.
+  handoffAt: { type: Date, default: undefined },
+  closure: { type: String, enum: ['informado_pela_atendente'], default: undefined },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 

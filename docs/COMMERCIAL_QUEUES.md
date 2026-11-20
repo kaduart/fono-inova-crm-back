@@ -10,7 +10,7 @@ São quatro filas que ajudam a secretária a vender e a reter pacientes. Elas ap
 | Pacote acabando | `GET /api/v2/commercial/package-ending` (padrão `auto`; `?threshold=0..5` mantém limite fixo) | Dashboard, "Precisa de você" |
 | Risco de evasão | `GET /api/v2/commercial/churn-risk` | Próximas Ações da secretária (card crítico) |
 | Reativação | `GET /api/v2/commercial/reactivation?minDays=7` | Dashboard e Acompanhamento |
-| Lead sem resposta | `GET /api/v2/commercial/leads-waiting?hours=2` | Topo do Dashboard, com cronômetro |
+| Lead sem resposta | `GET /api/v2/commercial/leads-waiting?days=3&minutes=0` | Topo do Dashboard, com cronômetro |
 | Avaliou e não fechou | `GET /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30` | Dashboard, "Precisa de você" |
 | Retomar contato (avaliou e sumiu) | `POST /api/v2/commercial/evaluation-reengage` (envio em massa, ver docs/flows/evaluation_reengagement.md) | Painel "Avaliou e não fechou" |
 | Próximo dia útil sem confirmação | `GET /api/v2/commercial/unconfirmed-next-day` e `POST /api/v2/commercial/confirmation-reminders` | Dashboard, "Precisa de você" |
@@ -33,13 +33,17 @@ O acesso é só para `admin` e `secretary`.
   - entram pacotes `active` que não são `convenio`/`liminar`, porque esses tipos são legado e não renovam;
   - as sessões restantes são calculadas como `totalSessions − sessionsDone`, já que `remainingSessions` é virtual (ADR-003) e nunca é gravado;
   - se o paciente já tem outro pacote ativo na mesma especialidade, vale o pacote com mais sessões, então quem já renovou sai da fila.
-- **Lead esperando:**
-  - entram leads abertos que chegaram nos últimos 3 dias;
+- **Lead esperando (resposta HUMANA, 20/11/2026):** regra pura em `humanWait()` e `leadAssignee()` (`services/commercial/commercialRules.js`).
+  - entram leads abertos, não convertidos, com movimento na janela (`days`, padrão 3) ou encaminhados pela Amanda nela;
   - visitas anônimas do site ficam de fora (`ANONYMOUS_VISIT_FILTER`): o rastreio de jornada grava um Lead por visitante, inclusive robôs e previews da Vercel, e sem nome, telefone nem identificação não há a quem responder;
-  - a espera começa na última mensagem do WhatsApp do próprio lead (inbound);
-  - se a clínica falou por último (Amanda ou humano), o lead não está esperando;
-  - sem mensagens, vale a última interação; sem interação, vale `createdAt`;
-  - "Respondido" marcado na fila (contato `lead_reply` depois do início da espera) tira o lead da fila, porque a equipe pode ter respondido por fora do ERP.
+  - **o cronômetro começa no encaminhamento atual da Amanda** (`amandaAgent.handoff.at`, enquanto `currentState` é `HANDOFF`); sem encaminhamento e com a Amanda desligada para o lead, começa na última mensagem recebida;
+  - **leads ainda com a Amanda** (sem encaminhamento e sem controle manual) não entram na lista: vão só para a contagem `withAmanda`;
+  - **resposta da Amanda não conta.** A espera termina com (a) mensagem manual que o provedor do WhatsApp aceitou (`Message` outbound, `metadata.sentBy: 'manual'`, status `sent`/`delivered`/`read`) ou (b) "Marcar como respondido" do encaminhamento atual;
+  - envio manual que falhou não grava `Message`, então o lead continua na fila;
+  - nova mensagem do lead depois da resposta volta a contar a partir dela (`reason: 'nova_mensagem'`); novo encaminhamento reinicia do encaminhamento (`reason: 'handoff'`), e resposta ou marcação anteriores não valem para ele;
+  - **responsável** (`assignee`): nome do atendente que pausou a Amanda ou respondeu (`manualControl.takenOverBy`); `ninguem` quando só a Amanda encaminhou; `nao_identificado` quando alguém pausou sem usuário (token da Agenda Externa);
+  - `minutes` define a espera mínima para aparecer (padrão 0); `hours` continua aceito por compatibilidade.
+- **"Marcar como respondido" (resposta dada pelo celular):** grava `CommercialContact` `lead_reply` com `handoffAt` (o encaminhamento atual, ou nulo) e `closure: 'informado_pela_atendente'`, para o histórico mostrar que o fechamento foi informado pela atendente e não comprovado por mensagem. Vale só para o encaminhamento em que foi feita.
 - **Área do lead:** `Lead.therapyArea` é texto livre, então `normalizeArea()` converte para a especialidade do Doctor (por exemplo, "fono" vira `fonoaudiologia` e "Terapia Ocupacional" vira `terapia_ocupacional`).
 - **Contato registrado:**
   - um contato registrado nos últimos 7 dias manda o item para o fim da fila sem escondê-lo;
