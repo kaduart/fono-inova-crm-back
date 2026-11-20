@@ -291,7 +291,11 @@ const appointmentSchema = new mongoose.Schema({
     campaign: { type: String, default: null },         // 'fala_tardia_2anos'
     origin: { type: String, default: null },           // origem original
     conversionScore: { type: Number, default: null },  // score no momento
-    capturedAt: { type: Date, default: null }          // quando o lead entrou
+    capturedAt: { type: Date, default: null },         // quando o lead entrou
+    // Correção 1 (20/11): identificadores do anúncio no momento do agendamento (opcionais)
+    gclid: { type: String, default: null },
+    adId: { type: String, default: null },
+    ctwaClid: { type: String, default: null }
   },
 
   // 🔥 NOVO: Indica se é o primeiro agendamento do paciente

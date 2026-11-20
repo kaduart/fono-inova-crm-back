@@ -90,7 +90,7 @@ describe('casos de borda', () => {
         ...ledgerEntries,
         { _id: 'rev-1', type: 'reversal', direction: 'debit', amount: 50, payment: 'pay-antigo', reversalOfEntryId: 'cred-antigo' },
       ],
-      referenceEntries: [{ _id: 'cred-antigo', type: 'payment_received', patient: P.ana, payment: 'pay-antigo', occurredAt: new Date('2026-11-06T15:00:00Z') }],
+      referenceEntries: [{ _id: 'cred-antigo', type: 'payment_received', amount: 80, patient: P.ana, payment: 'pay-antigo', occurredAt: new Date('2026-11-06T15:00:00Z') }],
     });
     expect(r.totalLiquidoLedger).toBe(1240);
     expect(r.porNivel.comprovada).toBe(430);

@@ -1,4 +1,5 @@
 // controllers/leadController.js - VERSÃO COMPLETA (Planilha + Anúncios)
+import { verifyMetaSubscription } from '../utils/metaWebhookVerify.js';
 import { followupQueue } from "../config/bullConfig.js";
 import { findPossibleDuplicates, pickReusableDuplicate } from '../utils/patientDuplicateCheck.js';
 import Followup from '../models/Followup.js';
@@ -192,12 +193,13 @@ export const metaLeadWebhook = async (req, res) => {
     try {
         // Validação do webhook Meta
         if (req.query['hub.mode'] === 'subscribe') {
-            const verifyToken = process.env.META_VERIFY_TOKEN || 'fono_inova_2025';
-            if (req.query['hub.verify_token'] === verifyToken) {
+            // Mesmo app da Meta: sem META_VERIFY_TOKEN, usa o token de verificação do WhatsApp.
+            const check = verifyMetaSubscription(req.query, process.env.META_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN);
+            if (check.status === 200) {
                 console.log('✅ Webhook Meta validado');
-                return res.status(200).send(req.query['hub.challenge']);
+                return res.status(200).send(check.body);
             }
-            console.warn('⚠️ Token de verificação Meta inválido');
+            console.warn(`⚠️ Verificação do webhook Meta recusada: ${check.reason}`);
             return res.sendStatus(403);
         }
 

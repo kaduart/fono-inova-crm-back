@@ -26,6 +26,8 @@ const adConversionSchema = new mongoose.Schema({
   phone: { type: String, default: null },
   source: { type: String, default: 'unknown' },
   attributionMethod: { type: String, default: null },
+  // Correção 3 (20/11): nível de evidência da origem desta aquisição (mesmo critério da receita)
+  attributionEvidence: { type: String, enum: ['comprovada', 'provavel', 'sem_vinculo', null], default: null },
   adId: { type: String, default: null },       // anúncio de WhatsApp (ctwa) que originou a conversa
   campaign: { type: String, default: null },   // campanha/ID vindo do link do site (---ref)
   gclid: { type: String, default: null },
@@ -37,6 +39,20 @@ const adConversionSchema = new mongoose.Schema({
   eventTime: { type: Date, required: true },
   meta: { type: platformSchema, default: () => ({}) },
   google: { type: platformSchema, default: () => ({}) },
+  // Correção 5 (20/11): resultado do envio "Avaliação realizada" (ação separada aval-).
+  // O gclid fica AQUI dentro, nunca no campo de topo, para não entrar no google-offline.csv.
+  evalDone: {
+    type: new mongoose.Schema({
+      status: { type: String, enum: ['sent', 'skipped', 'failed'], required: true },
+      reason: { type: String, default: null },
+      sentAt: { type: Date, default: null },
+      at: { type: Date, required: true },
+      gclid: { type: String, default: null },
+    }, { _id: false }),
+    default: undefined,
+  },
+  // Correção 4 (20/11): 1ª vez que a linha saiu no google-offline.csv (o Google pode ter importado)
+  googleCsvFirstServedAt: { type: Date, default: null },
   tiktok: { type: platformSchema, default: () => ({}) },
   attempts: { type: Number, default: 0 },
   nextAttemptAt: { type: Date, default: Date.now, index: true },

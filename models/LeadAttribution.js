@@ -20,6 +20,21 @@ const leadAttributionSchema = new mongoose.Schema({
   adSourceUrl: { type: String, default: null },   // link do anúncio (ctwaContext.sourceUrl)
   firstMessageAt: { type: Date, default: Date.now },
   capturedBy: { type: String, default: 'whatsapp_web' },
+  // Correção 7 (20/11): histórico dos últimos 20 toques. Aditivo: `source` e a regra first-touch
+  // acima não mudam. Sem identificador de clique nem texto da mensagem, só o que diz a origem.
+  touches: {
+    type: [{
+      _id: false,
+      at: { type: Date, required: true },
+      source: { type: String, default: null },
+      method: { type: String, default: null },
+      confidence: { type: String, default: null },
+      campaign: { type: String, default: null },
+      temClique: { type: Boolean, default: false },
+    }],
+    default: undefined,
+  },
+  lastTouchAt: { type: Date, default: null },
 }, { timestamps: true });
 
 export default mongoose.models.LeadAttribution || mongoose.model('LeadAttribution', leadAttributionSchema);

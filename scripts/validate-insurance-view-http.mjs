@@ -44,7 +44,7 @@ if (!admin) {
 }
 const token = jwt.sign(
   { id: admin._id.toString(), role: 'admin' },
-  process.env.JWT_SECRET || 'secreta',
+  (process.env.JWT_SECRET || (() => { throw new Error('Defina JWT_SECRET no ambiente'); })()),
   { expiresIn: '1h' }
 );
 const AUTH = ['Authorization', `Bearer ${token}`];
