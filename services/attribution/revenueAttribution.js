@@ -26,8 +26,9 @@
 //   Cada recebimento só vai para uma campanha se houver prova de que o contato pela campanha
 //   aconteceu ATÉ a data do recebimento (occurredAt). Data do contato:
 //     - AdConversion de aquisição: eventTime (momento do agendamento, que vem depois do contato);
-//       se a LeadAttribution do telefone tiver a MESMA origem, vale o firstMessageAt dela quando
-//       for anterior (o cron grava a origem da AdConversion a partir dessa LeadAttribution);
+//       se uma LeadAttribution do telefone for do MESMO contato publicitário (mesmo canal e
+//       mesmo click id, anúncio ou campanha), vale o firstMessageAt dela quando for anterior.
+//       Mesmo canal sozinho NÃO antecipa: a LeadAttribution fica como candidata própria;
 //     - LeadAttribution: firstMessageAt.
 //   Ordem: 1) AdConversion com isAcquisition=true do paciente (source/campaign/adId/método/click ids);
 //          2) LeadAttribution pelo telefone do paciente (variantes com/sem o 9 — phoneKey), da mais
@@ -77,6 +78,19 @@ export function classifyLedgerEntry(e = {}) {
     return { counted: false, reason: `${e.type}_sem_vinculo_de_caixa` };
   }
   return { counted: false, reason: e.type || 'tipo_ausente' };
+}
+
+// Mesmo contato publicitário: mesmo canal E (mesmo click id, ou mesmo anúncio, ou mesma campanha).
+// O fbc da AdConversion carrega o fbclid (fb.1.<ts>.<fbclid>), então compara pelo final.
+function sameTouch(acq = {}, a = {}) {
+  if (!acq.source || acq.source !== a.source) return false;
+  const eq = (x, y) => Boolean(x) && Boolean(y) && String(x) === String(y);
+  const fbclidOf = (fbc) => (fbc ? String(fbc).split('.').pop() : null);
+  if (eq(acq.gclid, a.gclid) || eq(acq.ttclid, a.ttclid) || eq(acq.ctwaClid, a.ctwaClid)) return true;
+  if (eq(fbclidOf(acq.fbc), a.fbclid)) return true;
+  if (eq(acq.adId, a.adId)) return true;
+  if (eq(acq.campaign, a.campaign)) return true;
+  return false;
 }
 
 function hasClickId(o = {}) {
@@ -153,7 +167,10 @@ export function attributeReceivedRevenue({
     const attrs = (phone && attrsByPhone.get(phone)) || [];
     const list = [];
     if (acq && acq.source && acq.source !== 'unknown') {
-      const sameSourceAttr = attrs.filter((a) => a.source === acq.source).map((a) => toMs(a.firstMessageAt));
+      // Só antecipa a data com contato que comprovadamente é da MESMA campanha/anúncio/clique.
+      // Coincidência só de canal (source) não basta: a LeadAttribution A continua como
+      // candidata própria logo abaixo, e o pagamento entre os contatos fica com ela.
+      const sameSourceAttr = attrs.filter((a) => sameTouch(acq, a)).map((a) => toMs(a.firstMessageAt));
       list.push({
         via: 'adConversion', source: acq.source, campaign: acq.campaign || null, adId: acq.adId || null,
         method: acq.attributionMethod || null, strong: hasClickId(acq) || STRONG_METHODS.includes(acq.attributionMethod),

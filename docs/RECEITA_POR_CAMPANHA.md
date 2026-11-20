@@ -95,8 +95,11 @@ basta trocar a lista de `ADMIN_ONLY` em `routes/analytics/attribution.routes.js`
    - Candidatas, nesta ordem: a `AdConversion` do paciente com `isAcquisition: true` (se `source` não for `unknown`);
      depois as `LeadAttribution` do telefone do paciente (com e sem o 9), da mais antiga para a mais nova.
    - Data do contato: `AdConversion.eventTime` (momento do agendamento, que vem depois do contato) ou, se for
-     anterior, o `firstMessageAt` da `LeadAttribution` do mesmo telefone com a **mesma** origem; para a
-     `LeadAttribution`, o `firstMessageAt`.
+     anterior, o `firstMessageAt` da `LeadAttribution` do mesmo telefone que seja do **mesmo contato
+     publicitário** (mesmo canal **e** mesmo click id, anúncio ou campanha); para a `LeadAttribution`, o
+     `firstMessageAt`. **Coincidência só de canal não antecipa a data** (Kadu, 20/11): com duas campanhas
+     Google A e B e um pagamento entre os dois contatos, o pagamento fica com A (ou sem vínculo, se não houver
+     evidência de A), B recebe zero dele, e o estorno posterior desfaz a atribuição de A.
    - Vale a primeira candidata com contato até o recebimento. Exemplo: pagou em outubro, chegou pela campanha
      em novembro e pagou de novo → só o pagamento de novembro vai para a campanha; o de outubro vai para uma
      origem anterior, se houver, ou para "sem vínculo" com `contato_da_campanha_depois_do_recebimento`.

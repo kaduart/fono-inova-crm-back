@@ -171,6 +171,53 @@ describe('campanha que chegou DEPOIS do recebimento', () => {
   });
 });
 
+describe('duas campanhas do MESMO canal (pedido do Kadu, 20/11)', () => {
+  // A: Google, campanha "A", contato em 01/09. B: Google, campanha "B", contato em 05/11
+  // (agendamento 10/11). Pagamento em 15/10, entre os dois contatos; estorno dele em 20/11.
+  const campanhaB = { _id: 'conv-B', patient: 'px', phone: '5562988880001', isAcquisition: true, source: 'google_ads', attributionMethod: 'gclid', campaign: 'B', gclid: 'GCLID-B', eventTime: d('2026-11-10T13:00:00Z') };
+  const contatoA = { phone: '5562988880001', source: 'google_ads', method: 'gclid', campaign: 'A', gclid: 'GCLID-A', firstMessageAt: d('2026-09-01T12:00:00Z') };
+  const contatoB = { phone: '5562988880001', source: 'google_ads', method: 'gclid', campaign: 'B', gclid: 'GCLID-B', firstMessageAt: d('2026-11-05T12:00:00Z') };
+
+  it('o contato de A (mesmo canal) não antecipa B: o pagamento fica com A e B recebe zero dele; o estorno desfaz A', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [
+        pay('out', 300, '2026-10-15T15:00:00Z'),
+        { _id: 'est', type: 'refund', direction: 'debit', amount: 300, patient: 'px', payment: 'pay-out', occurredAt: d('2026-11-20T15:00:00Z') },
+      ],
+      adConversions: [campanhaB],
+      leadAttributions: [contatoA, contatoB],
+      patients: pacientePx,
+    });
+    const A = r.linhas.find((l) => l.campanha === 'A');
+    const B = r.linhas.find((l) => l.campanha === 'B');
+    expect(A).toMatchObject({ origem: 'google_ads', recebido: 300, estornos: 300, liquido: 0, lancamentos: 2 });
+    expect(B).toBeUndefined(); // B recebe zero daquele pagamento e do estorno
+    expect(r.semVinculo.liquido).toBe(0);
+    expect(r.invariante.fecha).toBe(true);
+  });
+
+  it('sem nenhuma evidência de A, o pagamento fica sem vínculo (não vai para B por ser o mesmo canal)', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [pay('out', 300, '2026-10-15T15:00:00Z')],
+      adConversions: [campanhaB],
+      leadAttributions: [{ ...contatoA, campaign: null, gclid: null, method: 'keyword', firstMessageAt: null }, contatoB],
+      patients: pacientePx,
+    });
+    expect(r.linhas.find((l) => l.campanha === 'B')).toBeUndefined();
+    expect(r.semVinculo.liquido).toBe(300);
+  });
+
+  it('contato anterior da MESMA campanha (mesmo gclid) antecipa B', () => {
+    const r = attributeReceivedRevenue({
+      ledgerEntries: [pay('out', 300, '2026-10-15T15:00:00Z')],
+      adConversions: [campanhaB],
+      leadAttributions: [{ ...contatoB, firstMessageAt: d('2026-10-01T12:00:00Z') }],
+      patients: pacientePx,
+    });
+    expect(r.linhas.find((l) => l.campanha === 'B')).toMatchObject({ liquido: 300 });
+  });
+});
+
 describe('estorno desfaz o recebimento ORIGINAL', () => {
   it('estorno em novembro de um pagamento de outubro (antes da campanha) sai do sem vínculo, não da campanha', () => {
     const r = attributeReceivedRevenue({
