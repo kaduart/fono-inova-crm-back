@@ -131,8 +131,11 @@ export const authController = {
       user.passwordResetExpires = undefined;
       await user.save({ validateBeforeSave: true });
 
+      // O papel vem do cadastro (admin ou secretary na coleção Admin), nunca do
+      // corpo do pedido: antes, uma secretária recebia token de admin.
+      const tokenRole = tokenRoleFor(user, role);
       const authToken = jwt.sign(
-        { id: user._id.toString(), role },
+        { id: user._id.toString(), role: tokenRole },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -141,7 +144,7 @@ export const authController = {
         success: true,
         message: 'Senha atualizada com sucesso!',
         token: authToken,
-        user: { id: user._id, email: user.email, role }
+        user: { id: user._id, email: user.email, role: tokenRole }
       });
 
     } catch (error) {
@@ -206,6 +209,14 @@ export const authController = {
 
   async manualResetStart(req, res) {
     try {
+      // O link de redefinição só volta na resposta para um admin logado
+      // (suporte gerando link para alguém da equipe). Sem isso, qualquer
+      // pessoa com o e-mail de uma conta trocava a senha dela sem login.
+      // Para os demais, segue o fluxo normal: link por e-mail, resposta genérica.
+      if (req.user?.role !== 'admin') {
+        return authController.forgotPassword(req, res);
+      }
+
       const { email, role } = req.body;
 
       if (!email || !role || !['admin', 'doctor'].includes(role)) {
@@ -291,7 +302,7 @@ export const authController = {
       await user.save({ validateBeforeSave: true });
 
       const authToken = jwt.sign(
-        { id: user._id.toString(), role },
+        { id: user._id.toString(), role: tokenRoleFor(user, role) },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -309,6 +320,13 @@ export const authController = {
   }
 
 };
+
+// Papel do token depois de trocar a senha: profissional é sempre 'doctor';
+// na coleção Admin vale o papel gravado (admin ou secretary).
+function tokenRoleFor(user, requestedRole) {
+  if (requestedRole === 'doctor') return 'doctor';
+  return user?.role === 'admin' ? 'admin' : 'secretary';
+}
 
 // helper: monta a URL do front
 function makeUrl(token, role = 'admin') {

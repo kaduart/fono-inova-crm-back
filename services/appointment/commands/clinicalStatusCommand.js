@@ -27,7 +27,7 @@ export async function execute(id, status, user) {
     throw buildError('Agendamento não encontrado', 404, 'APPOINTMENT_NOT_FOUND');
   }
 
-  checkDoctorPermission(appointment, user);
+  checkDoctorPermission(appointment, user, { requireAssigned: true });
 
   // 🛡️ GUARDA DE DOMÍNIO: clinicalStatus='completed' só é permitido
   // se o atendimento já foi finalizado operacionalmente via completeSessionV2.
