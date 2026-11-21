@@ -3,6 +3,7 @@
  * Use nas rotas que Amanda precisa chamar
  */
 import jwt from "jsonwebtoken";
+import { isTokenUserValid } from './auth.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
@@ -49,7 +50,7 @@ export function isAgendaServiceRequestAllowed(req) {
     );
 }
 
-export const flexibleAuth = (req, res, next) => {
+export const flexibleAuth = async (req, res, next) => {
     const raw = req.headers.authorization || "";
     const token = raw.startsWith("Bearer ") ? raw.slice(7).trim() : null;
 
@@ -88,6 +89,11 @@ export const flexibleAuth = (req, res, next) => {
     // ✅ JWT normal
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Mesma checagem do `auth` para contas da equipe: existe, está ativa e
+        // tem o papel do token. Outros papéis seguem como antes.
+        if (['admin', 'secretary', 'doctor'].includes(decoded?.role) && !(await isTokenUserValid(decoded))) {
+            return sendApiError(res, new AppError('USER_NOT_FOUND', 'Usuário não encontrado', { status: 401 }), req);
+        }
         req.user = decoded;
         // Agenda Externa com login próprio (admin/secretária): marca o canal para
         // manter as regras de origem (pré-agendamento, canal do cancelamento).

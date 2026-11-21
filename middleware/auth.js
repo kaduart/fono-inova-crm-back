@@ -35,6 +35,24 @@ function _setUserExistsCached(key, exists) {
     _userExistsCache.set(key, { exists, ts: Date.now() });
 }
 
+// O dono do token ainda existe, está ativo e (na coleção Admin) tem o mesmo
+// papel do token. Usado por `auth` e pelo caminho JWT de `flexibleAuth`.
+// Na coleção Admin o papel do token tem que bater com o do cadastro: um token
+// de admin emitido para uma secretária (falha da troca de senha, corrigida)
+// deixa de valer, inclusive se renovado.
+export async function isTokenUserValid(decoded) {
+    if (!decoded?.id || !mongoose.Types.ObjectId.isValid(decoded.id)) return false;
+    const modelName = decoded.role === 'admin' || decoded.role === 'secretary' ? 'Admin' : 'Doctor';
+    const cacheKey = `${modelName}:${decoded.id}:${decoded.role}`;
+    const cached = _getUserExistsCached(cacheKey);
+    if (cached) return cached.exists;
+    const filter = { _id: decoded.id, active: { $ne: false } };
+    if (modelName === 'Admin') filter.role = decoded.role;
+    const exists = !!(await mongoose.model(modelName).exists(filter));
+    _setUserExistsCached(cacheKey, exists);
+    return exists;
+}
+
 export const auth = async (req, res, next) => {
     try {
         // Verificar token no cookie, header ou query string (para SSE/EventSource)
@@ -65,21 +83,7 @@ export const auth = async (req, res, next) => {
             );
         }
 
-        // Verificação otimizada de usuário — cacheada por USER_EXISTS_CACHE_TTL
-        // (ver comentário no topo do arquivo)
-        const modelName = decoded.role === 'admin' || decoded.role === 'secretary' ? 'Admin' : 'Doctor';
-        const cacheKey = `${modelName}:${decoded.id}`;
-
-        let userExists;
-        const cached = _getUserExistsCached(cacheKey);
-        if (cached) {
-            userExists = cached.exists;
-        } else {
-            const userModel = mongoose.model(modelName);
-            // active:{$ne:false} derruba conta desativada dentro do TTL do cache.
-            userExists = !!(await userModel.exists({ _id: decoded.id, active: { $ne: false } }));
-            _setUserExistsCached(cacheKey, userExists);
-        }
+        const userExists = await isTokenUserValid(decoded);
 
         if (!userExists) {
             return sendApiError(res, new AppError('USER_NOT_FOUND', 'Usuário não encontrado', { status: 401 }), req);
