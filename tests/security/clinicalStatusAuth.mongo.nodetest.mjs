@@ -168,3 +168,17 @@ test('C11 sem login, o pedido de redefinição vai por e-mail e a resposta não 
   assert.equal(emails.length, 1, 'o link deveria ir por e-mail');
   assert.equal(emails[0].email, 'b@teste.invalid');
 });
+
+test('C12 token de admin emitido para uma secretária é recusado no backend', { skip }, async () => {
+  const forjado = sign(id.sec, 'admin');
+  const r = await clinical(id.apptA, forjado);
+  assert.equal(r.status, 401, `token de admin da secretária: veio ${r.status}`);
+  const renov = await request(app).post('/api/login/renew-token').set('Authorization', `Bearer ${forjado}`);
+  assert.equal(renov.status, 401, `renovação: veio ${renov.status}`);
+});
+
+test('C13 rotas com flexibleAuth também recusam token de admin emitido para secretária', { skip }, async () => {
+  const forjado = sign(id.sec, 'admin');
+  const r = await patch(`/api/v2/appointments/${id.apptA}/confirm`, forjado, {});
+  assert.equal(r.status, 401, `flexibleAuth com token forjado: veio ${r.status}`);
+});
