@@ -30,12 +30,13 @@ function basicAuth(req, res, next) {
 const fmt = (d) => new Date(new Date(d).getTime() - 3 * 3600e3).toISOString().replace('T', ' ').slice(0, 19);
 const csvCell = (v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
 
-// Correção 4 (20/11): com ADS_FEED_SKIP_CANCELED=on, uma linha cujo agendamento foi cancelado
-// ANTES de ela ter saído no arquivo deixa de sair. A que já saiu continua (o Google pode ter
-// importado; desfazer exige ajuste de conversão, fora daqui). Desligado (padrão): regra do
-// contrato §2 como hoje, o cancelado continua no arquivo.
+// Correção 4 (20/11; padrão ligado desde a aprovação do Kadu e do analista): uma linha cujo
+// agendamento já estava cancelado ANTES da primeira entrega no arquivo não sai. A que já saiu
+// continua (o Google pode ter importado; desfazer exige ajuste de conversão, fora daqui).
+// "Avaliação agendada" mede agendamento ainda válido na 1ª entrega; comparecimento é a ação
+// separada "Avaliação realizada". ADS_FEED_SKIP_CANCELED=off volta à regra antiga (cancelado sai).
 export function skipCanceledEnabled(env = process.env) {
-  return String(env.ADS_FEED_SKIP_CANCELED || '').trim().toLowerCase() === 'on';
+  return String(env.ADS_FEED_SKIP_CANCELED || '').trim().toLowerCase() !== 'off';
 }
 export function feedRows(rows, canceledAppointments = new Set(), skipCanceled = false) {
   if (!skipCanceled) return rows;
