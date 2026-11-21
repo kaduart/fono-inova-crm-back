@@ -3,10 +3,16 @@
  * Garante 401 sem token, 403 para terapeuta e passagem para staff/agenda.
  * Os handlers não são executados nos casos negados (nada toca o banco).
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
+// Sem banco aqui: o dono do token fictício "existe" com o papel do token.
+// A checagem real (cadastro + papel) é coberta em tests/security/.
+vi.mock('../../middleware/auth.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  isTokenUserValid: async (decoded) => decoded?.id === '64b000000000000000000001',
+}));
 import { requireStaff, requireStaffOrAgenda } from '../../middleware/requireRole.js';
 import { flexibleAuth, isAgendaServiceRequestAllowed } from '../../middleware/amandaAuth.js';
 

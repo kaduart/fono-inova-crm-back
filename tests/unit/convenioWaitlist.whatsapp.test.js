@@ -33,9 +33,9 @@ beforeAll(async () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
     await ensureConvenioWaitlistIndexes();
-    const Admin = mongoose.models.Admin || mongoose.model('Admin', new mongoose.Schema({ name: String }), 'admins');
+    const Admin = mongoose.models.Admin || mongoose.model('Admin', new mongoose.Schema({ name: String, role: String }), 'admins');
     if (!mongoose.models.Doctor) mongoose.model('Doctor', new mongoose.Schema({ name: String }), 'doctors');
-    const admin = await Admin.create({ name: 'Secretária' });
+    const admin = await Admin.create({ name: 'Secretária', role: 'secretary' });
     token = jwt.sign({ id: String(admin._id), role: 'secretary' }, process.env.JWT_SECRET, { expiresIn: '1h' });
     app = express();
     app.use(express.json());
